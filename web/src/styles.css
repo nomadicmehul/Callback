@@ -268,6 +268,22 @@ a:hover {
   padding: 5px 10px;
   font-size: 12.5px;
 }
+.btn.rec {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  animation: recpulse 1.4s ease-in-out infinite;
+}
+@keyframes recpulse {
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 22%, transparent);
+  }
+}
+.dictate-live {
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ─── Cards / panels ────────────────────────────────────────────────────── */
 .panel {

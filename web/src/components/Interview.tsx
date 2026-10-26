@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { AnswerScore, Application, Drill, InterviewMode, InterviewSession, InterviewTurn, RunEvent } from '@shared/types';
 import { api } from '../lib/api';
 import { statusVar } from '../lib/ui';
+import { Dictate, appendSpoken } from './Dictate';
 import type { InterviewTarget } from './Drawer';
 
 const MODES: { key: InterviewMode; label: string; blurb: string }[] = [
@@ -253,11 +254,12 @@ export function InterviewView({
             </>
           ) : (
             <>
-              <textarea value={drillAnswer} onChange={(e) => setDrillAnswer(e.target.value)} placeholder="Answer out loud if you can — then type the gist here." style={{ minHeight: 110, fontFamily: 'var(--font)' }} />
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <textarea value={drillAnswer} onChange={(e) => setDrillAnswer(e.target.value)} placeholder="Answer out loud — hit Speak to have it written down, or type the gist here." style={{ minHeight: 110, fontFamily: 'var(--font)' }} />
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <button className="btn ghost sm" onClick={() => setDrill(null)}>
                   Later
                 </button>
+                <Dictate onText={(t) => setDrillAnswer((prev) => appendSpoken(prev, t))} disabled={busy} />
                 <div style={{ flex: 1 }} />
                 <button className="btn primary sm" onClick={submitDrill} disabled={busy || !drillAnswer.trim()}>
                   Score it
@@ -319,10 +321,11 @@ export function InterviewView({
               <textarea
                 value={answer}
                 onChange={(e) => setAnswer(e.target.value)}
-                placeholder="Answer as you would out loud. Situation → what YOU did → the measurable result → what you learned."
+                placeholder="Answer as you would out loud — type, or hit Speak and talk. Situation → what YOU did → the measurable result → what you learned."
                 style={{ minHeight: 130, fontFamily: 'var(--font)' }}
               />
-              <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <Dictate onText={(t) => setAnswer((prev) => appendSpoken(prev, t))} disabled={busy} />
                 <span className="scrim-note">{answer.trim().split(/\s+/).filter(Boolean).length} words · aim for 150–250</span>
                 <div style={{ flex: 1 }} />
                 <button className="btn primary" onClick={send} disabled={busy || !answer.trim()}>
