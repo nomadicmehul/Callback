@@ -1,0 +1,15 @@
+{
+  "name": "callback",
+  "displayName": "Callback",
+  "version": "0.1.0",
+  "description": "Honest, local-first job-search & interview-prep agent. Analyze a job's real requirements, tailor your resume from your actual experience, prep for interviews, and learn from every outcome — all stored on your own machine. Runs inside Claude Code on your subscription; no API key needed.",
+  "author": { "name": "Callback contributors" },
+  "license": "MIT",
+  "keywords": ["job-search", "resume", "interview-prep", "career", "local-first"],
+  "mcpServers": {
+    "jobsearch": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/callback.mjs", "mcp"]
+    }
+  }
+}

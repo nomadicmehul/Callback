@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Callback</title>
+<meta name="description" content="Callback is a local-first, open-source AI job-search and interview-prep agent built on Claude. It tailors honest resumes and cover letters, verifies them like an ATS, learns what gets you callbacks, and drills you for interviews. Your data never leaves your machine.">
+<meta property="og:title" content="Callback — the honest, local job-search agent">
+<meta property="og:description" content="Tailor, verify, apply, learn, prep. Built on Claude. Runs on your machine.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: a product page that shows the product — hero copy beside a live-looking
+     pipeline board and agent feed, then the loop, the three ways to run it, the principles. */
+  :root {
+    --bg: #0b1017;
+    --panel: #121a24;
+    --panel-2: #0e151e;
+    --border: #223042;
+    --text: #e6edf3;
+    --dim: #94a1b2;
+    --faint: #5f6c7b;
+    --brand: #3ddc97;
+    --accent: #6ea8fe;
+    --violet: #b692f6;
+    --warn: #e3b341;
+    --danger: #f06d6d;
+    --display: "Bricolage Grotesque", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+    --body: "IBM Plex Sans", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --max: 1120px;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f5f7fa; --panel: #ffffff; --panel-2: #eef2f6; --border: #d6dde6; --text: #121a24;
+      --dim: #4f5c6b; --faint: #8a95a3; --brand: #0e9f66; --accent: #2a66d6; --violet: #7a4fd3;
+      --warn: #a16d00; --danger: #c43d3d; color-scheme: light;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f5f7fa; --panel: #ffffff; --panel-2: #eef2f6; --border: #d6dde6; --text: #121a24;
+    --dim: #4f5c6b; --faint: #8a95a3; --brand: #0e9f66; --accent: #2a66d6; --violet: #7a4fd3;
+    --warn: #a16d00; --danger: #c43d3d; color-scheme: light;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .wrap {
+    max-width: var(--max);
+    margin: 0 auto;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: clamp(26px, 3.4vw, 36px); font-weight: 800; line-height: 1.1; }
+  h3 { font-size: 17px; font-weight: 600; }
+  p { margin: 0; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--brand);
+  }
+  .dim { color: var(--dim); }
+  .mono { font-family: var(--mono); }
+  code { font-family: var(--mono); font-size: 0.93em; background: var(--panel-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; }
+
+  /* nav */
+  .nav { display: flex; align-items: center; gap: 18px; padding-block: 18px; }
+  .brand { display: flex; align-items: center; gap: 8px; font-family: var(--display); font-weight: 800; font-size: 20px; color: var(--text); }
+  .brand .mark { color: var(--brand); font-size: 22px; }
+  .nav .links { margin-left: auto; display: flex; gap: 18px; font-size: 14px; }
+  .nav .links a { color: var(--dim); }
+  .nav .links a:hover { color: var(--text); text-decoration: none; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+    border-radius: var(--radius-sm); padding: 10px 16px; font: 500 14px var(--body); cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); text-decoration: none; }
+  .btn.primary { background: var(--brand); color: #06130c; border-color: transparent; font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.06); }
+
+  /* hero */
+  .hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 40px; align-items: center; padding-block: 36px 56px; }
+  .hero h1 { font-size: clamp(36px, 5.2vw, 60px); font-weight: 800; line-height: 1.02; }
+  .hero h1 em { font-style: normal; color: var(--brand); }
+  .hero .lede { font-size: 18px; color: var(--dim); max-width: 34em; margin-top: 18px; }
+  .hero .cta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; align-items: center; }
+  .install {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 9px 10px 9px 14px; font-family: var(--mono); font-size: 14px;
+  }
+  .install .dollar { color: var(--faint); }
+  .install button { border: 1px solid var(--border); background: var(--panel); color: var(--dim); border-radius: 6px; padding: 4px 9px; font: 500 12px var(--body); cursor: pointer; }
+  .install button:hover { color: var(--text); border-color: var(--accent); }
+  .facts { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 22px; font-size: 13px; color: var(--dim); }
+  .facts span::before { content: "•"; color: var(--brand); margin-right: 7px; }
+
+  /* product mock */
+  .mock { display: grid; gap: 12px; min-width: 0; }
+  .board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .col { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px; min-width: 0; }
+  .col h4 { margin: 0 0 8px; font: 600 11px var(--body); text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); display: flex; align-items: center; gap: 6px; }
+  .col h4 i { width: 7px; height: 7px; border-radius: 4px; display: inline-block; background: var(--c); }
+  .card { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--c); border-radius: 7px; padding: 8px 9px; margin-bottom: 7px; font-size: 12px; min-width: 0; }
+  .card .r { font-weight: 600; line-height: 1.25; }
+  .card .c { color: var(--dim); font-size: 11.5px; margin-top: 2px; }
+  .mats { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 6px; }
+  .mat { font-size: 10px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--border); color: var(--faint); white-space: nowrap; }
+  .mat.have { color: var(--brand); border-color: color-mix(in srgb, var(--brand) 40%, var(--border)); }
+  .mat.iv { color: var(--violet); border-color: color-mix(in srgb, var(--violet) 40%, var(--border)); }
+  .feed { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; font-family: var(--mono); font-size: 12px; line-height: 1.6; min-width: 0; overflow: hidden; }
+  .feed .t { color: var(--faint); margin-right: 8px; }
+  .feed .ok { color: var(--brand); }
+  .feed .w { color: var(--warn); }
+  .feed .a { color: var(--accent); }
+  .feed .v { color: var(--violet); }
+  .feed .line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cursor { display: inline-block; width: 7px; height: 13px; background: var(--brand); vertical-align: -2px; animation: blink 1.1s steps(2) infinite; }
+  @media (prefers-reduced-motion: reduce) { .cursor { animation: none; } html { scroll-behavior: auto; } }
+  @keyframes blink { to { opacity: 0; } }
+  .approval { border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); background: color-mix(in srgb, var(--warn) 8%, var(--panel)); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 12.5px; display: grid; gap: 6px; }
+  .approval b { color: var(--warn); }
+  .approval .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .approval .pill { font: 500 11.5px var(--body); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); }
+  .approval .pill.go { background: var(--brand); color: #06130c; border-color: transparent; }
+
+  /* sections */
+  section { padding-block: 56px; border-top: 1px solid var(--border); }
+  .head { max-width: 52em; display: grid; gap: 10px; margin-bottom: 28px; }
+  .head p { color: var(--dim); font-size: 16.5px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .feature { border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; background: var(--panel); display: grid; gap: 8px; align-content: start; min-width: 0; }
+  .feature .k { font-family: var(--mono); font-size: 11.5px; color: var(--faint); }
+  .feature p { color: var(--dim); font-size: 14.5px; }
+
+  /* the loop */
+  .loop { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; counter-reset: step; }
+  .step { position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; min-width: 0; display: grid; gap: 6px; align-content: start; }
+  .step::before { counter-increment: step; content: counter(step, decimal-leading-zero); font-family: var(--mono); font-size: 12px; color: var(--brand); }
+  .step p { color: var(--dim); font-size: 14px; }
+  .step .you { display: inline-block; margin-top: 4px; font: 500 11px var(--body); color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); border-radius: 999px; padding: 1px 8px; }
+  .loopnote { margin-top: 14px; color: var(--dim); font-size: 14.5px; max-width: 60em; }
+
+  /* ways */
+  .ways { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .way { border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); padding: 18px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+  .way .tag { font: 500 12px var(--body); color: var(--accent); }
+  .way pre { margin: 0; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; font-family: var(--mono); font-size: 12.5px; overflow-x: auto; }
+  .way p { color: var(--dim); font-size: 14.5px; }
+
+  /* principles */
+  .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 32px; }
+  .rule { display: grid; grid-template-columns: 22px 1fr; gap: 12px; padding-block: 14px; border-bottom: 1px solid var(--border); min-width: 0; }
+  .rule .n { color: var(--brand); font-family: var(--mono); font-size: 13px; padding-top: 3px; }
+  .rule p { color: var(--dim); font-size: 14.5px; margin-top: 3px; }
+
+  /* interview strip */
+  .score { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: start; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); padding: 16px; min-width: 0; }
+  .bars { display: grid; gap: 6px; font-size: 12.5px; }
+  .bar { display: grid; grid-template-columns: 120px 1fr 28px; gap: 10px; align-items: center; }
+  .bar .track { height: 6px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+  .bar .fill { height: 100%; border-radius: 4px; }
+  .bar .val { text-align: right; font-variant-numeric: tabular-nums; color: var(--dim); }
+  .fix { font-size: 13px; color: var(--dim); border-left: 3px solid var(--violet); padding-left: 10px; margin-top: 10px; }
+  .big { font-family: var(--display); font-size: 40px; font-weight: 800; line-height: 1; color: var(--warn); }
+  .big small { font-size: 14px; color: var(--faint); font-weight: 400; }
+
+  footer { border-top: 1px solid var(--border); padding-block: 28px 40px; color: var(--dim); font-size: 13.5px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; }
+  footer .links { margin-left: auto; display: flex; gap: 18px; }
+
+  @media (max-width: 860px) {
+    .hero { grid-template-columns: 1fr; gap: 28px; }
+    .loop, .ways { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 560px) {
+    .board { grid-template-columns: 1fr 1fr; }
+    .board .col:nth-child(3) { display: none; }
+    .loop, .ways { grid-template-columns: 1fr; }
+    .nav .links a:not(.gh) { display: none; }
+    .score { grid-template-columns: 1fr; }
+    .bar { grid-template-columns: 96px 1fr 28px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="wrap nav">
+  <a class="brand" href="#"><span class="mark">⟳</span>Callback</a>
+  <nav class="links">
+    <a href="#loop">How it works</a>
+    <a href="#run">Run it</a>
+    <a href="#principles">Principles</a>
+    <a class="gh" href="https://github.com/nomadicmehul/Callback">GitHub ↗</a>
+  </nav>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <div>
+      <div class="eyebrow">Open source · Local-first · Built on Claude</div>
+      <h1 style="margin-top:14px">A job-search agent that <em>never lies</em> on your behalf.</h1>
+      <p class="lede">Callback analyzes a role's real requirements, tailors a resume and cover letter from your actual experience, verifies them the way an applicant-tracking system would, and learns what gets you callbacks. Then it drills you for the interview. All of it on your machine.</p>
+      <div class="cta">
+        <span class="install" id="install"><span class="dollar">$</span><span id="cmd">npx callback-agent</span><button type="button" id="copy" aria-label="Copy install command">Copy</button></span>
+        <a class="btn primary" href="https://github.com/nomadicmehul/Callback">Star on GitHub</a>
+      </div>
+      <div class="facts">
+        <span>No account, no cloud, no telemetry</span>
+        <span>Works without an API key inside Claude Code</span>
+        <span>MIT licensed</span>
+      </div>
+    </div>
+
+    <div class="mock" aria-label="What the dashboard looks like">
+      <div class="board">
+        <div class="col" style="--c: var(--brand)">
+          <h4><i></i>ready <span class="dim">2</span></h4>
+          <div class="card" style="--c: var(--brand)"><div class="r">Senior Backend Engineer</div><div class="c">Northwind · Berlin</div><div class="mats"><span class="mat have">📄</span><span class="mat have">✉</span><span class="mat have">📋</span><span class="mat">🎤</span></div></div>
+          <div class="card" style="--c: var(--brand)"><div class="r">Platform Engineer</div><div class="c">Fabrikam · Remote</div><div class="mats"><span class="mat have">📄</span><span class="mat have">✉</span><span class="mat">📋</span><span class="mat">🎤</span></div></div>
+        </div>
+        <div class="col" style="--c: var(--accent)">
+          <h4><i></i>applied <span class="dim">1</span></h4>
+          <div class="card" style="--c: var(--accent)"><div class="r">Staff Engineer, Data</div><div class="c">Contoso · Amsterdam</div><div class="mats"><span class="mat have">📄</span><span class="mat have">✉</span><span class="mat have">📋</span><span class="mat iv">🎤1 · 3.4/5</span></div></div>
+        </div>
+        <div class="col" style="--c: var(--violet)">
+          <h4><i></i>interview <span class="dim">1</span></h4>
+          <div class="card" style="--c: var(--violet)"><div class="r">Engineering Manager</div><div class="c">Tailspin · Munich</div><div class="mats"><span class="mat have">📄</span><span class="mat have">✉</span><span class="mat have">📋</span><span class="mat iv">🎤3 · 4.2/5</span><span class="mat" style="color:var(--warn)">⏰2</span></div></div>
+        </div>
+      </div>
+
+      <div class="approval">
+        <div><b>⏸ Needs your sign-off</b> · Save tailored resume for Senior Backend Engineer @ Northwind</div>
+        <div class="dim">Drafted only from your profile. Placeholders mark what it could not verify.</div>
+        <div class="row"><span class="pill go">Approve &amp; save</span><span class="pill">Discard</span></div>
+      </div>
+
+      <div class="feed" aria-label="Agent activity">
+        <div class="line"><span class="t">14:02:11</span>◆ jd-analyzer · claude-haiku-5-5</div>
+        <div class="line"><span class="t">14:02:11</span>→ profile_get() <span class="ok">✓ 318 chars, drafts will be grounded in it</span></div>
+        <div class="line"><span class="t">14:02:12</span>→ memory_search("tailor resume senior backend") <span class="ok">✓ 3 note(s)</span></div>
+        <div class="line"><span class="t">14:02:13</span>▣ Saved jd analysis · fit <span class="a">78/100</span> · 4 must-haves · 1 red flag</div>
+        <div class="line"><span class="t">14:02:14</span>◆ resume-tailor · claude-sonnet-5-5</div>
+        <div class="line"><span class="t">14:02:19</span><span class="w">⏸ Awaiting your approval — Save tailored resume</span></div>
+        <div class="line"><span class="t">14:03:02</span><span class="ok">✅ You approved the draft</span></div>
+        <div class="line"><span class="t">14:03:03</span>→ artifact_ats_check() <span class="ok">✓ 87/100 · 1 page · must-haves 4/4</span> · <span class="w">1 number to verify</span></div>
+        <div class="line"><span class="t">14:03:04</span>◆ cover-letter · claude-sonnet-5-5 <span class="cursor" aria-hidden="true"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <section id="loop">
+    <div class="wrap">
+      <div class="head">
+        <div class="eyebrow">The loop</div>
+        <h2>Every application teaches the next one.</h2>
+        <p>Most tools stop at "generate a resume". Callback runs the whole funnel and closes the loop with a memory of what actually worked for you.</p>
+      </div>
+      <div class="loop">
+        <div class="step"><h3>Capture</h3><p>Paste a posting or its URL. Callback reads the page's structured job data (company, role, location) and strips hidden text and prompt-injection payloads before any agent sees it.</p></div>
+        <div class="step"><h3>Analyze fit, honestly</h3><p>Must-haves, nice-to-haves, keywords, red flags, and a calibrated 0–100 fit score with a one-line rationale. Gaps stay visible.</p></div>
+        <div class="step"><h3>Tailor from your profile</h3><p>A resume and a cover letter for this job only, grounded in your uploaded CV. Anything it cannot verify becomes a placeholder, never a fabrication.</p><span class="you">you approve</span></div>
+        <div class="step"><h3>Verify like an ATS</h3><p>Exports clean PDF/DOCX, reads the PDF back as a parser would, checks headings, contact details and keyword coverage, and flags numbers your profile does not back up.</p></div>
+        <div class="step"><h3>Apply yourself</h3><p>Callback never submits anything. You send the application; it tracks the stage on a pipeline board.</p><span class="you">you submit</span></div>
+        <div class="step"><h3>Log the outcome</h3><p>Screen, interview, offer, rejection, ghosted. Each outcome triggers a retro that proposes a lesson.</p></div>
+        <div class="step"><h3>Approve what sticks</h3><p>Lessons wait in Memory until you activate them. Active lessons feed every future draft and prep session.</p><span class="you">you decide</span></div>
+        <div class="step"><h3>Prep for the interview</h3><p>Mock interviews from the real job description, scored on a rubric with one concrete fix per answer. Weak answers come back as spaced-repetition drills.</p></div>
+      </div>
+      <p class="loopnote">Each job in the pipeline carries its own resume, cover letter, prep pack and interview history, tagged with the stage you practiced at, so nothing gets mixed up between roles.</p>
+    </div>
+  </section>
+
+  <section id="interview">
+    <div class="wrap">
+      <div class="head">
+        <div class="eyebrow">Interview prep</div>
+        <h2>Scored on real signals, not vibes.</h2>
+        <p>Behavioral, technical and system-design modes. Every answer gets rubric scores and one concrete fix. Recurring weak dimensions become memory; weak answers become drills on a spaced schedule until they are strong. Prep happens before the interview, never during it.</p>
+      </div>
+      <div class="score">
+        <div>
+          <div class="mono dim" style="font-size:12px;margin-bottom:8px">Q2 · Quantified result · for Staff Engineer, Data @ Contoso · at screen</div>
+          <div class="bars">
+            <div class="bar"><span>STAR structure</span><span class="track"><span class="fill" style="width:80%;background:var(--brand)"></span></span><span class="val">4</span></div>
+            <div class="bar"><span>Ownership</span><span class="track"><span class="fill" style="width:60%;background:var(--warn)"></span></span><span class="val">3</span></div>
+            <div class="bar"><span>Quantified result</span><span class="track"><span class="fill" style="width:40%;background:var(--danger)"></span></span><span class="val">2</span></div>
+            <div class="bar"><span>Reflection</span><span class="track"><span class="fill" style="width:80%;background:var(--brand)"></span></span><span class="val">4</span></div>
+            <div class="bar"><span>Concision</span><span class="track"><span class="fill" style="width:100%;background:var(--brand)"></span></span><span class="val">5</span></div>
+          </div>
+          <div class="fix">End with a number: a %, time saved, revenue, users, latency. One concrete metric. This question is now scheduled as a drill for tomorrow.</div>
+        </div>
+        <div class="big">3.6<small>/5</small></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="run">
+    <div class="wrap">
+      <div class="head">
+        <div class="eyebrow">Three ways to run one brain</div>
+        <h2>Bring a key, bring Claude Code, or bring nothing.</h2>
+        <p>All three share the same local database, so what you do in one shows up in the others.</p>
+      </div>
+      <div class="ways">
+        <div class="way">
+          <div class="tag">Anthropic API key</div>
+          <h3>Built-in agents</h3>
+          <pre>npx callback-agent
+# then Settings → add your key</pre>
+          <p>Callback's own agents on the Claude Agent SDK: analysis, tailoring, the ATS loop, mock interviews, retros. Human approval on every write.</p>
+        </div>
+        <div class="way">
+          <div class="tag">Claude Code subscription, no key</div>
+          <h3>Claude Code plugin</h3>
+          <pre>git clone https://github.com/nomadicmehul/Callback
+cd Callback &amp;&amp; npm install
+claude --plugin-dir .</pre>
+          <p>Slash commands like <code>/callback:apply</code> and <code>/callback:mock-interview</code> drive the same tools over a local MCP server. The dashboard still shows everything.</p>
+        </div>
+        <div class="way">
+          <div class="tag">Just curious</div>
+          <h3>Demo mode</h3>
+          <pre>npx callback-agent</pre>
+          <p>No key, nothing sent anywhere. A scripted pipeline exercises the real event stream, approvals, memory and interview loop so you can see how it feels before spending a token.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="principles">
+    <div class="wrap">
+      <div class="head">
+        <div class="eyebrow">Principles</div>
+        <h2>The job market is a bot-versus-bot arms race. This is the honest side of it.</h2>
+        <p>Auto-appliers spam and get accounts banned. Real-time interview copilots get people disqualified. Callback is the alternative: fewer, better-fit applications with authentic materials, and prep that makes you genuinely better.</p>
+      </div>
+      <div class="rules">
+        <div class="rule"><span class="n">01</span><div><h3>Honesty by construction</h3><p>Drafts come only from your real, stated experience. No invented titles, dates, metrics or skills. Export refuses a draft with placeholders left in it.</p></div></div>
+        <div class="rule"><span class="n">02</span><div><h3>Human in the loop</h3><p>Agents draft and organize. You review every document and submit every application yourself.</p></div></div>
+        <div class="rule"><span class="n">03</span><div><h3>Postings are untrusted input</h3><p>A posting guard strips invisible characters and "ignore previous instructions" payloads before any agent reads a listing, and shows you what it removed.</p></div></div>
+        <div class="rule"><span class="n">04</span><div><h3>Prep, never cheat</h3><p>Mock interviews, scoring and drills before the interview. No live assistance during one.</p></div></div>
+        <div class="rule"><span class="n">05</span><div><h3>Local-first and private</h3><p>Your resume, your salary history and the companies you are quietly talking to stay in <code>~/.callback</code> on your machine. The server binds to localhost only.</p></div></div>
+        <div class="rule"><span class="n">06</span><div><h3>Sanctioned access only</h3><p>Polite fetching that respects robots.txt. No scraping job boards, no auto-apply, no terms-of-service games.</p></div></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap" style="margin-bottom:14px">
+    <span>Like the project? <a href="https://github.com/nomadicmehul/Callback">Star the repo ⭐</a> and tell one friend who's job hunting.</span>
+  </div>
+  <div class="wrap">
+    <span><span style="color:var(--brand)">⟳</span> Callback · MIT License</span>
+    <span class="mono dim" style="font-size:12.5px">Node 22.13+ · zero native dependencies · web dashboard + terminal UI</span>
+    <nav class="links">
+      <a href="https://github.com/nomadicmehul/Callback">GitHub</a>
+      <a href="https://github.com/nomadicmehul/Callback#readme">Docs</a>
+      <a href="https://www.npmjs.com/package/callback-agent">npm</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var btn = document.getElementById('copy');
+    var cmd = document.getElementById('cmd');
+    if (!btn || !cmd) return;
+    btn.addEventListener('click', function () {
+      var text = cmd.textContent;
+      function done() { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1600); }
+      function fallback() {
+        try {
+          var range = document.createRange(); range.selectNodeContents(cmd);
+          var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+          btn.textContent = 'Select + copy';
+        } catch (e) { /* nothing more to do */ }
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, fallback);
+      } else {
+        fallback();
+      }
+    });
+  })();
+</script>
+</body>
+</html>
