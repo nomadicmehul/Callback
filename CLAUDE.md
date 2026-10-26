@@ -125,7 +125,7 @@ bundled `dist/` even in a checkout. Use a different port per concurrent test ser
 
 | Prefix | Use for | Branches from → merges to |
 |---|---|---|
-| `feature/` | new functionality (`feature/voice-answers`) | `main` → `main` |
+| `features/` | new functionality (`features/voice-answers`) | `main` → `main` |
 | `bugfix/` | non-urgent bug fixes (`bugfix/drill-due-date`) | `main` → `main` |
 | `hotfix/` | urgent fix for a released/published version (`hotfix/export-crash`) | release tag → `main` (+ new patch release) |
 | `refactor/` | restructuring with no behavior change | `main` → `main` |
