@@ -116,6 +116,29 @@ bundled `dist/` even in a checkout. Use a different port per concurrent test ser
 - Commit **only** when explicitly asked, after reviewing together what goes in.
 - Commit messages: plain, no `Co-Authored-By` or other attribution trailers.
 - Remote: https://github.com/nomadicmehul/Callback (`origin`). Never commit `~/.callback` data or `.env`.
+- Never work directly on `main`. Every change gets its own branch, merged back via PR.
+
+### Branch naming
+
+`<type>/<short-kebab-description>` — lowercase, hyphens, no spaces, optionally an issue number
+(`bugfix/42-ats-date-parse`). One topic per branch.
+
+| Prefix | Use for | Branches from → merges to |
+|---|---|---|
+| `feature/` | new functionality (`feature/voice-answers`) | `main` → `main` |
+| `bugfix/` | non-urgent bug fixes (`bugfix/drill-due-date`) | `main` → `main` |
+| `hotfix/` | urgent fix for a released/published version (`hotfix/export-crash`) | release tag → `main` (+ new patch release) |
+| `refactor/` | restructuring with no behavior change | `main` → `main` |
+| `docs/` | README, CLAUDE.md, landing page, skills text only | `main` → `main` |
+| `chore/` | deps, build, tooling, CI, config | `main` → `main` |
+| `test/` | test scripts / fixtures only | `main` → `main` |
+| `release/` | preparing a version (`release/0.2.0`): version bump, changelog | `main` → `main` + tag `v0.2.0` |
+
+### Commit messages
+
+Conventional Commits, matching the branch type: `feat: …`, `fix: …` (bugfix and hotfix), `refactor: …`,
+`docs: …`, `chore: …`, `test: …`. Optional scope: `feat(interview): voice dictation for answers`.
+Imperative mood, ≤ 72-char subject, body explains *why* when it isn't obvious. Still no attribution trailers.
 
 ## Status and what's next
 
