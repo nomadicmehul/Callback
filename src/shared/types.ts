@@ -119,6 +119,50 @@ export interface MemoryNote {
   createdAt: string;
 }
 
+// ─── Experience bank (the candidate's real experience, stored once) ─────────
+// Every resume and cover letter is a view of these facts, so titles, dates and
+// numbers stop drifting between versions. Imported entries start 'proposed'
+// and only reach drafts once the human confirms them.
+
+export type ExperienceKind = 'story' | 'role' | 'project' | 'education' | 'certification' | 'link';
+export type ExperienceStatus = 'proposed' | 'active' | 'archived';
+export type ExperienceSource = 'manual' | 'quick' | 'gap' | 'cv' | 'linkedin' | 'github' | 'link' | 'agent';
+
+export interface Experience {
+  id: string;
+  kind: ExperienceKind;
+  status: ExperienceStatus;
+  /** "Led the Postgres 11→15 upgrade" · "Staff SRE" · "nightwatch" */
+  title: string;
+  /** Employer, school or project owner. */
+  org: string | null;
+  /** As the person writes it: "Jan 2023 – Present", "2019". */
+  period: string | null;
+  /** Stories: challenge → what you did → result (the shape recruiters look for). */
+  situation: string | null;
+  action: string | null;
+  result: string | null;
+  /** Roles, projects and links: description or bullets. */
+  details: string | null;
+  /** Skills, tools and themes: "kubernetes", "migration", "mentoring". */
+  tags: string[];
+  url: string | null;
+  source: ExperienceSource;
+  /** File name, URL or username it came from. */
+  sourceRef: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ExperienceInput = Partial<Omit<Experience, 'id' | 'createdAt' | 'updatedAt'>> & { title: string };
+
+export interface ImportResult {
+  added: Experience[];
+  /** Already in the bank (or discarded before) — not added again. */
+  skipped: number;
+  note?: string;
+}
+
 // ─── Outcomes (what feeds the loop) ─────────────────────────────────────────
 
 export type OutcomeStage =

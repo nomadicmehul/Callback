@@ -141,7 +141,7 @@ export function companyFromUrl(url: URL): string | null {
   return core && core.length > 1 ? titleCase(core.replace(/[-_]+/g, ' ')) : null;
 }
 
-function metaTags(html: string): Record<string, string> {
+export function metaTags(html: string): Record<string, string> {
   const out: Record<string, string> = {};
   const a = /<meta\s+[^>]*?(?:property|name)\s*=\s*["']([^"']+)["'][^>]*?content\s*=\s*["']([^"']*)["']/gi;
   const b = /<meta\s+[^>]*?content\s*=\s*["']([^"']*)["'][^>]*?(?:property|name)\s*=\s*["']([^"']+)["']/gi;

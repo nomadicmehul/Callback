@@ -8,6 +8,7 @@ import { SettingsView } from './components/Settings';
 import { ActivityFeed } from './components/Activity';
 import { InterviewView } from './components/Interview';
 import { ClaudeCodeCard } from './components/ClaudeCodeCard';
+import { ExperienceView } from './components/Experience';
 
 const CC_HIDDEN_KEY = 'callback.claudeCodeBanner.hidden';
 const readHidden = () => {
@@ -18,7 +19,7 @@ const readHidden = () => {
   }
 };
 
-type View = 'pipeline' | 'interview' | 'activity' | 'memory' | 'settings';
+type View = 'pipeline' | 'interview' | 'experience' | 'activity' | 'memory' | 'settings';
 
 const VIEW_META: Record<View, { title: string; sub: string }> = {
   pipeline: { title: 'Pipeline', sub: 'Every role you’re tracking, from captured to offer.' },
@@ -26,6 +27,7 @@ const VIEW_META: Record<View, { title: string; sub: string }> = {
     title: 'Interview prep',
     sub: 'Mock interviews that score your answers, remember your weak spots, and drill them on a schedule.',
   },
+  experience: { title: 'Experience', sub: 'Your real experience, stored once — every resume and letter is built from it.' },
   activity: { title: 'Activity', sub: 'Live stream of everything your agents are doing.' },
   memory: { title: 'Memory', sub: 'What Callback has learned about you — you decide what sticks.' },
   settings: { title: 'Settings', sub: 'Your key, your profile, your data — all local.' },
@@ -79,6 +81,13 @@ export function App() {
         </div>
         <NavItem label="Pipeline" icon="▦" active={view === 'pipeline'} count={state.stats?.total} onClick={() => setView('pipeline')} />
         <NavItem label="Interview" icon="🎤" active={view === 'interview'} count={state.dueDrills || undefined} onClick={() => setView('interview')} />
+        <NavItem
+          label="Experience"
+          icon="★"
+          active={view === 'experience'}
+          count={state.experiences.filter((e) => e.status === 'proposed').length || undefined}
+          onClick={() => setView('experience')}
+        />
         <NavItem label="Activity" icon="⟲" active={view === 'activity'} onClick={() => setView('activity')} />
         <NavItem label="Memory" icon="🧠" active={view === 'memory'} count={state.memory.proposed.length || undefined} onClick={() => setView('memory')} />
         <NavItem label="Settings" icon="⚙" active={view === 'settings'} onClick={() => setView('settings')} />
@@ -156,6 +165,7 @@ export function App() {
               </div>
             </div>
           )}
+          {view === 'experience' && <ExperienceView experiences={state.experiences} hasProfile={state.hasProfile} onChanged={state.refresh} />}
           {view === 'memory' && <MemoryView memory={state.memory} onChanged={state.refresh} />}
           {view === 'settings' && <SettingsView health={state.health} onSaved={state.refresh} />}
         </div>

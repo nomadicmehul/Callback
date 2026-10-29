@@ -46,11 +46,26 @@ export function ArtifactCard({
       setBusy(false);
     }
   }
-  async function saveFills(fills: GapFill[]) {
+  async function saveFills(fills: GapFill[], keep: number[]) {
     setBusy(true);
     try {
       const next = fillGaps(artifact.content, fills);
       await api.updateArtifact(artifact.id, next);
+      // Answers about real experience go to the bank, so the next draft can use them.
+      const gaps = findGaps(artifact.content);
+      for (const f of fills) {
+        if (!('text' in f) || !keep.includes(f.index)) continue;
+        const text = f.text.replace(/\s+/g, ' ').trim();
+        const outcome = /outcome|result/i.test(gaps[f.index]?.hint ?? '');
+        await api.addExperience({
+          kind: 'story',
+          title: text.length > 90 ? `${text.slice(0, 90).replace(/\s+\S*$/, '')}…` : text.replace(/\.$/, ''),
+          ...(outcome ? { result: text } : { action: text }),
+          status: 'active',
+          source: 'gap',
+          sourceRef: artifact.title,
+        });
+      }
       const left = findGaps(next).length;
       setFilling(false);
       setReport(null);

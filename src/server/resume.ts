@@ -136,7 +136,7 @@ function layout(blocks: Block[], kind?: ArtifactKind): Placed[] {
 }
 
 /** "Title | Company | Jan 2026 – Present | City" → title, the rest, and the right-aligned dates/location. */
-function splitEntry(text: string): { title: string; rest: string; when: string } {
+export function splitEntry(text: string): { title: string; rest: string; when: string } {
   // PDF exports glue the dates onto the company ("Acme GmbH Jan 2026 – Present") — pull them apart.
   const parts = text.split(/\s+\|\s+/).flatMap((p) => {
     const m = DATE_RANGE.exec(p);
@@ -467,6 +467,7 @@ export async function analyzeAts(input: {
     for (const b of blocks) {
       if (b.type === 'h1' || b.type === 'h2') continue;
       if (/@|\+?\d{2,3}[\s-]\d{3}/.test(b.text)) continue; // contact lines
+      if (DATE_LINE.test(b.text)) continue; // a letter's own date ("Berlin, 29 October 2026")
       const nums = (b.text.match(/\d+(?:[.,]\d+)?%?/g) ?? []).filter((n) => !/^(19|20)\d{2}$/.test(n));
       const bad = nums.filter((n) => !prof.includes(n.toLowerCase()));
       if (bad.length) unverifiedClaims.push(`"${b.text.slice(0, 110)}" — ${[...new Set(bad)].join(', ')} not found in your profile`);

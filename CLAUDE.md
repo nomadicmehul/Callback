@@ -41,7 +41,8 @@ writes) so the dashboard is fully alive without a key and so everything is testa
 bin/callback.mjs        launcher: callback | serve | tui | mcp | --help  (tsx in a checkout, dist/ from npm)
 scripts/build-server.mjs esbuild bundle → dist/server, dist/tui, dist/mcp-stdio.mjs (deps external)
 src/shared/types.ts     the one source of truth for types (web + server + TUI); events.ts = shared formatters;
-                        placeholders.ts = [fill in: …] gap find/fill (export gate, ATS check, dashboard gap filler)
+                        placeholders.ts = [fill in: …] gap find/fill (export gate, ATS check, dashboard gap filler);
+                        stories.ts = story types + recruiter prompts (dashboard form and /callback:story)
 src/server/
   index.ts    Hono app, SSE /events, serves dist/web, port CALLBACK_PORT (4317)
   routes.ts   REST API under /api (applications, artifacts, interviews, drills, memory, approvals…)
@@ -57,12 +58,15 @@ src/server/
   approvals.ts bridge: canUseTool ↔ dashboard (SSE) — requestApproval() resolves when the human clicks
   bus.ts / runctx.ts  event bus + RunContext { runId, applicationId, sessionId?, emit }
   profile.ts  CV ingestion (PDF via unpdf, DOCX via mammoth, text)
+  cvtext.ts   reading CV text: reflow PDF line wraps, heading/bullet/role-line detection, name/contact
+  experience.ts experience bank: imports (CV, LinkedIn ZIP via node:zlib, GitHub API, a public link), quick-add
+              structuring, bankText()/groundTruth() — what drafts, profile_get and the honesty check read
   config.ts   ~/.callback/config.json (0600): apiKey, candidateProfile, profileSource
   models.ts   role → model (orchestrator opus-5-5, writer sonnet-5-5, extractor haiku-5-5)
 src/tui/      Ink terminal UI (talks to the server over HTTP + SSE parsed from fetch — Node has no EventSource)
-web/          Vite + React dashboard (views: pipeline, interview, activity, memory, settings)
+web/          Vite + React dashboard (views: pipeline, interview, experience, activity, memory, settings)
 skills/       portable Agent Skills (= the plugin's skills): jd-analyzer, resume-tailor, cover-letter,
-              mock-interview, retro, setup, apply, outcome
+              mock-interview, retro, setup, apply, outcome, story
 .claude-plugin/plugin.json  plugin manifest (repo root = plugin root)
 docs/index.html  landing page (GitHub Pages)
 ```
@@ -108,6 +112,9 @@ bundled `dist/` even in a checkout. Use a different port per concurrent test ser
 - Approvals: only writes need sign-off (`save_draft` except `interview_prep`, `artifact_update`).
   Reads and `save_jd_analysis` are auto-allowed.
 - Memory notes: `proposed | active | retired`; agents search ACTIVE notes and only ever *propose*.
+- Experience bank: `proposed | active | archived`. Imports and agent saves arrive `proposed`; only `active`
+  entries reach drafts (`groundTruth()` = profile text + active bank). Anything the human typed is theirs, so it
+  saves `active`. Imports dedupe on kind + title + org, including archived entries (a discard sticks).
   Weakness notes are scoped `stage:<mode>` with `tags = [dimensionKey]`.
 - Hono `serveStatic` roots are cwd-relative, so the launcher always spawns the server with `cwd = repo root`.
 - Node ≥ 22.13 (unflagged `node:sqlite`). `NODE_OPTIONS=--disable-warning=ExperimentalWarning` is set by the launcher.
@@ -148,7 +155,11 @@ Imperative mood, ≤ 72-char subject, body explains *why* when it isn't obvious.
 Built and verified in demo mode: thin slice, dashboard + TUI, profile ingestion, plugin mode, URL
 capture + posting guard + structured extraction (company/role/location), outcome → retro, interview
 module (mock interviews, scoring, weakness memory, drills, prep packs), PDF/DOCX export + ATS check,
-per-job resume + cover letter, per-job interview traceability, npm packaging (`callback-agent`).
+per-job resume + cover letter, per-job interview traceability, npm packaging (`callback-agent`), house-format
+export + suggestions, gap filler, experience bank (imports, quick add, story-backed drafts, plugin tools).
+
+Experience bank, round two: coverage across tracked jobs ("3 of your 5 targets ask for X — no story yet") and
+project suggestions; live-driver structuring of quick-add text; drafts that pick stories per role archetype.
 
 Next, in rough order:
 1. **Live-key test** of the `claude` driver end to end (tailor → ATS loop → cover letter → interview → retro),

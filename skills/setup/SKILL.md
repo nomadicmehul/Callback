@@ -17,7 +17,8 @@ Callback never drafts from assumptions. Everything it writes is grounded in the 
 3. Normalize the text lightly (fix broken line-wrapping from PDF extraction, keep every fact). **Do not embellish, reorder achievements, or add anything the user didn't provide.**
 4. Show the user the cleaned text and confirm it's accurate and complete. Ask one or two clarifying questions only where a fact is genuinely ambiguous (dates, titles).
 5. Call `profile_set` with the confirmed text and `source` set to the filename (or "pasted").
-6. Tell them what's next: `/callback:apply <job URL or pasted posting>` to capture a job and get honest, tailored materials — and that the dashboard (`node bin/callback.mjs`) shows everything.
+6. Offer to build their experience bank from what they already have: `experience_import` with `source: "cv"` turns the resume into roles, projects and story seeds; `"github"` adds public repositories; `"link"` adds a page they wrote or built. A LinkedIn data export (.zip) can be uploaded in the dashboard → Experience. Imports wait for their review there. For a story in their own words, use `/callback:story`.
+7. Tell them what's next: `/callback:apply <job URL or pasted posting>` to capture a job and get honest, tailored materials — and that the dashboard (`node bin/callback.mjs`) shows everything.
 
 ## Never
 - Never save a profile the user hasn't seen and confirmed.

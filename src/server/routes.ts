@@ -1,5 +1,15 @@
 import { Hono } from 'hono';
-import type { ApplicationStatus, HealthInfo, MemoryStatus, OutcomeStage, ApprovalDecision } from '@shared/types';
+import type {
+  ApplicationStatus,
+  ApprovalDecision,
+  ExperienceInput,
+  ExperienceKind,
+  ExperienceSource,
+  ExperienceStatus,
+  HealthInfo,
+  MemoryStatus,
+  OutcomeStage,
+} from '@shared/types';
 import { APP_VERSION } from './version';
 import { DATA_DIR, PLUGIN_DIR } from './paths';
 import { getConfig, setConfig, hasApiKey, hasProfile } from './config';
@@ -42,7 +52,27 @@ import {
   getArtifact,
   listArtifactsOfKind,
   updateArtifact,
+  addExperience,
+  listExperiences,
+  updateExperience,
 } from './db';
+import { groundTruth, importFromCv, importGitHub, importLink, importLinkedIn, structureStory } from './experience';
+
+const EXPERIENCE_KINDS: ExperienceKind[] = ['story', 'role', 'project', 'education', 'certification', 'link'];
+const EXPERIENCE_STATUSES: ExperienceStatus[] = ['proposed', 'active', 'archived'];
+const EXPERIENCE_SOURCES: ExperienceSource[] = ['manual', 'quick', 'gap', 'cv', 'linkedin', 'github', 'link', 'agent'];
+const TEXT_FIELDS = ['title', 'org', 'period', 'situation', 'action', 'result', 'details', 'url', 'sourceRef'] as const;
+
+/** Only known fields, with enums checked — a request body never writes anything else. */
+function experienceFields(body: any): Partial<ExperienceInput> {
+  const out: Partial<ExperienceInput> = {};
+  for (const f of TEXT_FIELDS) if (f in body) (out as any)[f] = body[f] == null ? null : String(body[f]).slice(0, 4000);
+  if (EXPERIENCE_KINDS.includes(body.kind)) out.kind = body.kind;
+  if (EXPERIENCE_STATUSES.includes(body.status)) out.status = body.status;
+  if (EXPERIENCE_SOURCES.includes(body.source)) out.source = body.source;
+  if (Array.isArray(body.tags)) out.tags = body.tags.map(String);
+  return out;
+}
 
 export function apiRouter(): Hono {
   const api = new Hono();
@@ -234,6 +264,53 @@ export function apiRouter(): Hono {
     return c.json({ approval });
   });
 
+  // ─── Experience bank ──────────────────────────────────────────────────────
+  api.get('/experience', (c) => c.json(listExperiences()));
+
+  api.post('/experience', async (c) => {
+    const fields = experienceFields(await c.req.json().catch(() => ({})));
+    if (!fields.title?.trim()) return c.json({ error: 'A title is required.' }, 400);
+    // Written by the human in the dashboard: theirs, so active unless they say otherwise.
+    return c.json({ experience: addExperience({ status: 'active', source: 'manual', ...fields, title: fields.title }) });
+  });
+
+  api.patch('/experience/:id', async (c) => {
+    const experience = updateExperience(c.req.param('id'), experienceFields(await c.req.json().catch(() => ({}))));
+    if (!experience) return c.json({ error: 'not found' }, 404);
+    return c.json({ experience });
+  });
+
+  api.post('/experience/quick', async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const text = String(body.text ?? '').trim();
+    if (text.length < 10) return c.json({ error: 'Write a sentence or two about what you did.' }, 400);
+    return c.json(structureStory(text.slice(0, 4000)));
+  });
+
+  const imported = async (c: any, run: () => unknown) => {
+    try {
+      return c.json(await run());
+    } catch (err: any) {
+      return c.json({ error: String(err?.message ?? err) }, 422);
+    }
+  };
+  api.post('/experience/import/cv', (c) => imported(c, importFromCv));
+  api.post('/experience/import/github', async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    return imported(c, () => importGitHub(String(body.username ?? '')));
+  });
+  api.post('/experience/import/link', async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    return imported(c, () => importLink(String(body.url ?? '')));
+  });
+  api.post('/experience/import/linkedin', async (c) => {
+    const file = (await c.req.parseBody()).file;
+    if (!(file instanceof File)) return c.json({ error: 'Upload the LinkedIn export (.zip) in the "file" field.' }, 400);
+    if (file.size > 50 * 1024 * 1024) return c.json({ error: 'File too large (50 MB max).' }, 400);
+    const data = new Uint8Array(await file.arrayBuffer());
+    return imported(c, () => importLinkedIn(data));
+  });
+
   // ─── Memory ───────────────────────────────────────────────────────────────
   api.get('/memory', (c) =>
     c.json({ proposed: listMemory('proposed'), active: listMemory('active'), retired: listMemory('retired') }),
@@ -264,7 +341,7 @@ export function apiRouter(): Hono {
       pdf,
       source: art.content,
       application: app,
-      profile: getConfig().candidateProfile ?? '',
+      profile: groundTruth(),
       kind: art.kind,
       siblings: listArtifactsOfKind(art.kind, art.id).map((a) => a.content),
     });

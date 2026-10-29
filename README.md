@@ -40,6 +40,7 @@ Callback is one honest companion for the whole funnel, with a memory of you at i
 - ✍️ **Tailors a resume *and* a cover letter for every job, from your *real* experience** — never fabricates a title, date, metric, or skill. Each job in your pipeline carries its own documents, its own prep pack, and its own mock-interview history (with the pipeline stage you practiced at), so nothing gets mixed up between roles.
 - ✅ **Human-in-the-loop by design** — agents draft; *you* review and approve every document; Callback never auto-submits.
 - 📄 **Your profile comes first** — upload your resume (PDF/DOCX/TXT); every agent reads it *before* doing anything, so drafts are grounded in your real experience, not scaffolds.
+- 🗂️ **An experience bank you fill once** — import your CV, your LinkedIn data export, your public GitHub and pages you made, or just tell Callback what you did; it sorts each story into situation → what you did → result. Imports wait for your OK. Confirmed stories write your cover-letter evidence for you, keep numbers identical across every version, and count as verified in the honesty check. Answers you type into a draft's gaps can be saved there too, so you're never asked twice.
 - 🛡️ **Treats job postings as untrusted input** — a posting guard strips hidden text and "ignore previous instructions" payloads before any agent reads a listing, and shows you what it removed.
 - 📎 **Exports ATS-friendly PDF/DOCX and verifies them like a parser would** — reads the PDF's text layer back to check parseability, contact details, section headings, and keyword coverage, and **flags any number in your resume that your profile doesn't back up**. It refuses to export a draft with placeholders left in it.
 - 🔌 **Runs three ways, one brain** — with an API key (built-in agents), **inside Claude Code on your subscription with no API key** (as a plugin), or key-free in demo mode. All share the same local memory.
@@ -89,6 +90,7 @@ Then inside Claude Code:
 
 ```
 /callback:setup        → add your resume (your profile — do this first)
+/callback:story        → add real experience by talking it through (or import your CV / GitHub)
 /callback:apply <url or pasted posting>   → analyze fit, tailor, you approve, saved
 /callback:outcome <company> rejected|screen|interview|offer|ghosted [note]
                        → logs it and runs a retro that proposes lessons

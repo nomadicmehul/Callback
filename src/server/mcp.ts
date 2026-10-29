@@ -24,7 +24,8 @@ import {
   listDueDrills,
 } from './db';
 import { scheduleDrill, completeSession, recordDrillResult, INTERVIEW_MODES } from './interview';
-import { getArtifact, listArtifactsOfKind, updateArtifact } from './db';
+import { addExperience, getArtifact, listArtifactsOfKind, listExperiences, updateArtifact } from './db';
+import { bankText, groundTruth, importFromCv, importGitHub, importLink } from './experience';
 import { parseResumeMarkdown, renderPdf, analyzeAts, summarizeAts, exportArtifact, findPlaceholders } from './resume';
 
 const ok = (text: string) => ({ content: [{ type: 'text' as const, text }] });
@@ -38,16 +39,17 @@ export function jobsearchTools(ctx: RunContext) {
     // ── Profile: the ground truth every draft must come from ──────────────
     tool(
       'profile_get',
-      "Fetch the candidate's profile (their real experience / resume text). ALWAYS call this FIRST before analyzing fit or drafting anything — every draft must be grounded only in what is here.",
+      "Fetch the candidate's profile (their real experience / resume text) plus their experience bank (stories, roles, projects they confirmed). ALWAYS call this FIRST before analyzing fit or drafting anything — every draft must be grounded only in what is here. Prefer the bank's exact numbers, titles and dates.",
       {},
       async () => {
         const p = getConfig().candidateProfile?.trim();
-        if (!p) {
+        const bank = bankText();
+        if (!p && !bank) {
           return ok(
             'NO PROFILE ON FILE. Do not draft from assumptions. Ask the user to add their resume (dashboard: Settings → Profile, or /callback:setup in Claude Code), or call profile_set with text they provide.',
           );
         }
-        return ok(`Candidate profile (${p.length} chars):\n\n${p}`);
+        return ok([p ? `Candidate profile (${p.length} chars):\n\n${p}` : 'No resume text on file — the experience bank below is all there is.', bank].filter(Boolean).join('\n\n'));
       },
       RO,
     ),
@@ -195,6 +197,62 @@ export function jobsearchTools(ctx: RunContext) {
       },
     ),
 
+    // ── Experience bank: the candidate's real experience, stored once ─────
+    tool(
+      'experience_list',
+      "List the candidate's experience bank: confirmed entries (what drafts may use) and proposals still waiting for their review.",
+      {},
+      async () => {
+        const waiting = listExperiences('proposed');
+        return ok(
+          [
+            bankText() || 'No confirmed entries yet.',
+            waiting.length ? `Waiting for review (${waiting.length}): ${waiting.map((e) => `${e.kind}: ${e.title}`).join('; ')}` : '',
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
+        );
+      },
+      RO,
+    ),
+    tool(
+      'experience_save',
+      "Save one entry to the candidate's experience bank — a story (situation → action → result), role, project, education, credential or link. Use ONLY facts the candidate told you; never add a number, title or detail they didn't give. Set confirmed=true only after they have read the exact entry and said it's accurate — otherwise it waits in the dashboard for their review.",
+      {
+        kind: z.enum(['story', 'role', 'project', 'education', 'certification', 'link']).default('story'),
+        title: z.string().describe('Short headline in their words, e.g. "Led the Postgres 11→15 upgrade".'),
+        org: z.string().optional().describe('Employer, school or project owner.'),
+        period: z.string().optional().describe('As they say it: "Jan 2023 – Present", "2021".'),
+        situation: z.string().optional(),
+        action: z.string().optional().describe('What THEY did.'),
+        result: z.string().optional().describe('What changed, with their real number if they gave one.'),
+        details: z.string().optional(),
+        tags: z.array(z.string()).default([]),
+        url: z.string().optional(),
+        confirmed: z.boolean().default(false),
+      },
+      async (args) => {
+        const { confirmed, ...fields } = args;
+        const e = addExperience({ ...fields, status: confirmed ? 'active' : 'proposed', source: 'agent' });
+        return ok(confirmed ? `Saved to the experience bank: ${e.title}` : `Proposed "${e.title}" — it waits in the dashboard (Experience) for the candidate to confirm.`);
+      },
+    ),
+    tool(
+      'experience_import',
+      "Import entries from the candidate's own material as proposals they review in the dashboard: 'cv' (the resume already on file), 'github' (a public username), or 'link' (a public page they wrote or built — blog post, talk, project site).",
+      { source: z.enum(['cv', 'github', 'link']), value: z.string().default('').describe('GitHub username or URL; empty for cv.') },
+      async (args) => {
+        try {
+          const r = args.source === 'cv' ? importFromCv() : args.source === 'github' ? await importGitHub(args.value) : await importLink(args.value);
+          return ok(
+            `Proposed ${r.added.length} entr${r.added.length === 1 ? 'y' : 'ies'}${r.skipped ? ` (${r.skipped} already in the bank)` : ''}: ${r.added.map((e) => `${e.kind}: ${e.title}`).join('; ') || 'none'}. ${r.note ?? ''} They review them in the dashboard → Experience.`,
+          );
+        } catch (err: any) {
+          return ok(`Import failed: ${String(err?.message ?? err)}`);
+        }
+      },
+    ),
+
     // ── Writes that produce documents ─────────────────────────────────────
     tool(
       'save_jd_analysis',
@@ -295,7 +353,7 @@ export function jobsearchTools(ctx: RunContext) {
           pdf,
           source: art.content,
           application: app,
-          profile: getConfig().candidateProfile ?? '',
+          profile: groundTruth(),
           kind: art.kind,
           siblings: listArtifactsOfKind(art.kind, art.id).map((a) => a.content),
         });

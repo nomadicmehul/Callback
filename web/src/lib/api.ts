@@ -15,6 +15,9 @@ import type {
   AnswerScore,
   AtsReport,
   Drill,
+  Experience,
+  ExperienceInput,
+  ImportResult,
   InterviewMode,
   InterviewSession,
   InterviewTurn,
@@ -114,6 +117,20 @@ export const api = {
   answerDrill: (id: string, answer: string) =>
     post(`/api/drills/${id}/answer`, { answer }).then(j<{ score: AnswerScore; drill: Drill }>),
   prep: (applicationId: string) => post(`/api/applications/${applicationId}/prep`).then(j<{ runId: string }>),
+
+  // Experience bank
+  experiences: () => fetch('/api/experience').then(j<Experience[]>),
+  addExperience: (body: ExperienceInput) => post('/api/experience', body).then(j<{ experience: Experience }>),
+  updateExperience: (id: string, body: Partial<ExperienceInput>) => patch(`/api/experience/${id}`, body).then(j<{ experience: Experience }>),
+  quickStory: (text: string) => post('/api/experience/quick', { text }).then(j<{ draft: ExperienceInput; type: string }>),
+  importCv: () => post('/api/experience/import/cv').then(j<ImportResult>),
+  importGitHub: (username: string) => post('/api/experience/import/github', { username }).then(j<ImportResult>),
+  importLink: (url: string) => post('/api/experience/import/link', { url }).then(j<ImportResult>),
+  importLinkedIn: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return fetch('/api/experience/import/linkedin', { method: 'POST', body: fd }).then(j<ImportResult>);
+  },
 
   // Documents: edit, verify, export
   updateArtifact: (id: string, content: string) => patch(`/api/artifacts/${id}`, { content }).then(j<{ artifact: Artifact }>),

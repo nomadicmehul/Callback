@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Application, Approval, DashboardStats, HealthInfo, MemoryNote, RunEvent } from '@shared/types';
+import type { Application, Approval, DashboardStats, Experience, HealthInfo, MemoryNote, RunEvent } from '@shared/types';
 import { api } from './api';
 import { useEventStream } from './useSSE';
 
@@ -15,6 +15,7 @@ export interface AppState {
   applications: Application[];
   approvals: Approval[];
   memory: Memory;
+  experiences: Experience[];
   activity: RunEvent[];
   connected: boolean;
   hasProfile: boolean;
@@ -28,19 +29,22 @@ export function useCallbackApp(): AppState {
   const [applications, setApplications] = useState<Application[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [memory, setMemory] = useState<Memory>({ proposed: [], active: [], retired: [] });
+  const [experiences, setExperiences] = useState<Experience[]>([]);
   const [activity, setActivity] = useState<RunEvent[]>([]);
   const [hasProfile, setHasProfile] = useState(true); // optimistic until first load
   const [dueDrills, setDueDrills] = useState(0);
 
   const refresh = useCallback(async () => {
-    const [apps, st, aps, mem, cfg, drills] = await Promise.all([
+    const [apps, st, aps, mem, cfg, drills, exps] = await Promise.all([
       api.listApplications(),
       api.stats(),
       api.approvals(),
       api.memory(),
       api.getConfig(),
       api.drills(),
+      api.experiences().catch(() => []), // an older server has no experience bank — don't block the rest
     ]);
+    setExperiences(exps);
     setApplications(apps);
     setStats(st);
     setApprovals(aps);
@@ -75,5 +79,5 @@ export function useCallbackApp(): AppState {
     scheduleRefresh();
   });
 
-  return { health, stats, applications, approvals, memory, activity, connected, hasProfile, dueDrills, refresh };
+  return { health, stats, applications, approvals, memory, experiences, activity, connected, hasProfile, dueDrills, refresh };
 }
