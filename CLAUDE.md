@@ -40,7 +40,8 @@ writes) so the dashboard is fully alive without a key and so everything is testa
 ```
 bin/callback.mjs        launcher: callback | serve | tui | mcp | --help  (tsx in a checkout, dist/ from npm)
 scripts/build-server.mjs esbuild bundle → dist/server, dist/tui, dist/mcp-stdio.mjs (deps external)
-src/shared/types.ts     the one source of truth for types (web + server + TUI); events.ts = shared formatters
+src/shared/types.ts     the one source of truth for types (web + server + TUI); events.ts = shared formatters;
+                        placeholders.ts = [fill in: …] gap find/fill (export gate, ATS check, dashboard gap filler)
 src/server/
   index.ts    Hono app, SSE /events, serves dist/web, port CALLBACK_PORT (4317)
   routes.ts   REST API under /api (applications, artifacts, interviews, drills, memory, approvals…)
@@ -48,7 +49,9 @@ src/server/
   mcp.ts      jobsearchTools(ctx): the tool set shared by the in-process SDK server AND the stdio plugin server
   db.ts       node:sqlite schema + repo functions (additive ALTER migrations at the bottom of initDb)
   interview.ts rubric (DIMENSIONS), question bank, scoreAnswer heuristics, SM-2-lite drills, weaknesses, prep pack
-  resume.ts   markdown → PDF (pdfkit) / DOCX; analyzeAts reads the PDF back like a parser (kind-aware)
+  resume.ts   house-format markdown → PDF (pdfkit) / DOCX (layout roles: name, contact, headline, section,
+              `### Title | Company | Dates | City` entries); analyzeAts reads the PDF back like a parser
+              (kind-aware) and adds style/evidence suggestions
   posting.ts  URL → company/role/location/type/date (JSON-LD JobPosting → meta → <title> → board URL) + text
   guard.ts    postingGuard, htmlToText, robots/private-host checks
   approvals.ts bridge: canUseTool ↔ dashboard (SSE) — requestApproval() resolves when the human clicks

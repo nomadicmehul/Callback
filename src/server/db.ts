@@ -349,6 +349,11 @@ export function listArtifacts(applicationId: string): Artifact[] {
     .map(rowToArtifact);
 }
 
+/** Every other document of one kind (e.g. all cover letters) — to catch text reused word for word. */
+export function listArtifactsOfKind(kind: ArtifactKind, exceptId: string): Artifact[] {
+  return db.prepare('SELECT * FROM artifacts WHERE kind = ? AND id != ?').all(kind, exceptId).map(rowToArtifact);
+}
+
 // ─── Memory ─────────────────────────────────────────────────────────────────
 
 function rowToMemory(r: any): MemoryNote {

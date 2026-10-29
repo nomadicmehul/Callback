@@ -13,6 +13,7 @@ coverage/
 # Never commit personal job-search data — it lives in ~/.callback by default,
 # but ignore any local copy just in case.
 /data/
+/Application/
 *.db
 *.db-wal
 *.db-shm
