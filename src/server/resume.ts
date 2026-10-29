@@ -244,7 +244,17 @@ export function renderPdf(
         case 'contact':
         case 'headline': {
           doc.fillColor(hex(b.role === 'contact' ? SOFT : INK));
-          writeRuns(b.runs, { size: b.role === 'contact' ? 9 : 10.5, x: left, y: doc.y, align: center ? 'center' : 'left' });
+          if (b.role === 'contact' && /\s\|\s/.test(b.text)) {
+            // Wrap between "|" parts only — never inside an email or a link.
+            doc.font('Helvetica').fontSize(9);
+            const rows: string[] = [];
+            for (const part of b.text.split(/\s+\|\s+/)) {
+              const last = rows[rows.length - 1];
+              if (last && doc.widthOfString(`${last} | ${part}`) <= width) rows[rows.length - 1] = `${last} | ${part}`;
+              else rows.push(part);
+            }
+            for (const row of rows) doc.text(row, left, doc.y, { width, align: center ? 'center' : 'left', lineGap: 1.5 });
+          } else writeRuns(b.runs, { size: b.role === 'contact' ? 9 : 10.5, x: left, y: doc.y, align: center ? 'center' : 'left' });
           doc.moveDown(0.1);
           if (letter && next?.role !== 'contact' && next?.role !== 'headline') {
             rule(doc.y + 3, 1);

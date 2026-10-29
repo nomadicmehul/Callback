@@ -58,7 +58,7 @@ src/server/
   approvals.ts bridge: canUseTool ↔ dashboard (SSE) — requestApproval() resolves when the human clicks
   bus.ts / runctx.ts  event bus + RunContext { runId, applicationId, sessionId?, emit }
   profile.ts  CV ingestion (PDF via unpdf, DOCX via mammoth, text)
-  cvtext.ts   reading CV text: reflow PDF line wraps, heading/bullet/role-line detection, name/contact
+  cvtext.ts   reading CV text: parseHeader (name/contact/headline block), reflow PDF line wraps, heading/bullet/role lines
   experience.ts experience bank: imports (CV, LinkedIn ZIP via node:zlib, GitHub API, a public link), quick-add
               structuring, bankText()/groundTruth() — what drafts, profile_get and the honesty check read
   config.ts   ~/.callback/config.json (0600): apiKey, candidateProfile, profileSource
