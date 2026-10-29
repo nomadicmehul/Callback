@@ -1,7 +1,7 @@
 ---
 name: setup
 description: Onboard a candidate into Callback — capture their real experience (resume/CV) as the profile every draft is grounded in. Run this first, before /callback:apply. Use when the user is new, wants to add or replace their resume, or an agent reports "NO PROFILE ON FILE".
-license: MIT
+license: Apache-2.0
 ---
 
 # Setup — your profile comes first

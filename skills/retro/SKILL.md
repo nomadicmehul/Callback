@@ -1,7 +1,7 @@
 ---
 name: retro
 description: After an application outcome (response, rejection, interview, offer, ghosting), extract durable lessons for the candidate's memory — what converted, what to change — as reviewable proposals. Powers Callback's learning loop. Never auto-activates lessons; the human approves.
-license: MIT
+license: Apache-2.0
 ---
 
 # Outcome Retro

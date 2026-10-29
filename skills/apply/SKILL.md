@@ -1,7 +1,7 @@
 ---
 name: apply
 description: End-to-end honest application pipeline inside Claude Code — capture a job (URL or pasted posting), analyze its real requirements, tailor the candidate's resume from their actual experience, and save it for review, with the candidate approving every document. Use when the user wants to apply to a role, tailor a resume to a posting, or asks "is this job a fit?".
-license: MIT
+license: Apache-2.0
 argument-hint: <job URL or pasted job description>
 ---
 

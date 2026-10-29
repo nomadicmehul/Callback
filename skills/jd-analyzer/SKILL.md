@@ -1,7 +1,7 @@
 ---
 name: jd-analyzer
 description: Analyze a job description into honest, structured requirements — must-haves, nice-to-haves, keywords, responsibilities, red flags, and a calibrated fit score. Use before tailoring a resume or deciding whether to apply. Surfaces gaps instead of hiding them.
-license: MIT
+license: Apache-2.0
 ---
 
 # JD Analyzer
