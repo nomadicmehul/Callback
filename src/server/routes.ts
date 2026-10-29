@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { ApplicationStatus, HealthInfo, MemoryStatus, OutcomeStage, ApprovalDecision } from '@shared/types';
 import { APP_VERSION } from './version';
-import { DATA_DIR } from './paths';
+import { DATA_DIR, PLUGIN_DIR } from './paths';
 import { getConfig, setConfig, hasApiKey, hasProfile } from './config';
 import { resolveApproval } from './approvals';
 import {
@@ -55,6 +55,7 @@ export function apiRouter(): Hono {
       hasProfile: hasProfile(),
       demoMode: process.env.CALLBACK_DEMO === '1' || !hasApiKey(),
       dataDir: DATA_DIR,
+      pluginDir: PLUGIN_DIR,
     };
     return c.json(info);
   });

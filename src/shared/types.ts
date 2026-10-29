@@ -210,6 +210,8 @@ export interface HealthInfo {
   hasProfile: boolean;
   demoMode: boolean;
   dataDir: string;
+  /** What to pass to `claude --plugin-dir`: the package root as typed in a shell ("~/Callback"), when it ships the plugin manifest. */
+  pluginDir: string | null;
 }
 
 export interface DashboardStats {

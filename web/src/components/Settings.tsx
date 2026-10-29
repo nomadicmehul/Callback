@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { HealthInfo, ProfileSource } from '@shared/types';
+import { ClaudeCodeCard } from './ClaudeCodeCard';
 import { api } from '../lib/api';
 
 export function SettingsView({ health, onSaved }: { health: HealthInfo | null; onSaved: () => void }) {
@@ -106,7 +107,7 @@ export function SettingsView({ health, onSaved }: { health: HealthInfo | null; o
               <a href="https://console.anthropic.com/" target="_blank" rel="noreferrer">
                 console.anthropic.com
               </a>{' '}
-              for live agents. <b>Have Claude Code but no key?</b> Use Callback as a Claude Code plugin instead — see the README.
+              for live agents.
             </>
           )}
         </p>
@@ -119,6 +120,7 @@ export function SettingsView({ health, onSaved }: { health: HealthInfo | null; o
             placeholder={hasKey ? '•••••••• (set — type to replace)' : 'sk-ant-…'}
           />
         </label>
+        {!hasKey && <ClaudeCodeCard pluginDir={health?.pluginDir ?? null} />}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
