@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import type { Artifact, AtsReport } from '@shared/types';
+import { fillGaps, findGaps, type GapFill } from '@shared/placeholders';
 import { api } from '../lib/api';
 import { Md } from './Markdown';
 import { AtsReportView } from './AtsReport';
+import { GapFiller } from './GapFiller';
 
 const EXPORTABLE = new Set(['resume', 'cover_letter', 'interview_prep']);
 const CHECKABLE = new Set(['resume', 'cover_letter']);
@@ -19,6 +21,7 @@ export function ArtifactCard({
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [filling, setFilling] = useState(false);
   const [draft, setDraft] = useState(artifact.content);
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState<AtsReport | null>(null);
@@ -43,6 +46,22 @@ export function ArtifactCard({
       setBusy(false);
     }
   }
+  async function saveFills(fills: GapFill[]) {
+    setBusy(true);
+    try {
+      const next = fillGaps(artifact.content, fills);
+      await api.updateArtifact(artifact.id, next);
+      const left = findGaps(next).length;
+      setFilling(false);
+      setReport(null);
+      flash('ok', left ? `Saved ✓ — ${left} gap(s) left` : 'Saved ✓ — ready to export');
+      onChanged();
+    } catch (err: any) {
+      flash('err', String(err?.message ?? err));
+    } finally {
+      setBusy(false);
+    }
+  }
   async function check() {
     setBusy(true);
     try {
@@ -55,6 +74,11 @@ export function ArtifactCard({
     }
   }
   async function download(format: 'pdf' | 'docx') {
+    if (gaps.length) {
+      // Callback won't export a scaffold — take the human straight to the gaps instead of a dead end.
+      setFilling(true);
+      return;
+    }
     setBusy(true);
     try {
       await api.downloadArtifact(artifact.id, format);
@@ -67,6 +91,7 @@ export function ArtifactCard({
   }
 
   const revisions = Number(artifact.meta?.revisions ?? 0);
+  const gaps = EXPORTABLE.has(artifact.kind) ? findGaps(artifact.content) : [];
 
   return (
     <div className="panel" style={{ marginBottom: 8, overflow: 'hidden' }}>
@@ -79,7 +104,7 @@ export function ArtifactCard({
 
       {open && (
         <div style={{ padding: '10px 16px 14px', borderTop: '1px solid var(--border)' }}>
-          {(EXPORTABLE.has(artifact.kind) || CHECKABLE.has(artifact.kind)) && !editing && (
+          {(EXPORTABLE.has(artifact.kind) || CHECKABLE.has(artifact.kind)) && !editing && !filling && (
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10, alignItems: 'center' }}>
               <button
                 className="btn sm"
@@ -112,7 +137,24 @@ export function ArtifactCard({
             </div>
           )}
 
-          {editing ? (
+          {gaps.length > 0 && !editing && !filling && (
+            <div className="issue block gap-banner">
+              <span className="lvl">⛔</span>
+              <span style={{ flex: 1 }}>
+                {gaps.length} gap{gaps.length === 1 ? '' : 's'} to fill with your real details before this can be exported.
+              </span>
+              <button className="btn primary sm" onClick={() => setFilling(true)} disabled={busy}>
+                Fill gaps
+              </button>
+            </div>
+          )}
+
+          {filling && msg && (
+            <div style={{ fontSize: 12.5, marginBottom: 8, color: msg.kind === 'ok' ? 'var(--brand)' : 'var(--danger)' }}>{msg.text}</div>
+          )}
+          {filling ? (
+            <GapFiller content={artifact.content} busy={busy} onSave={saveFills} onCancel={() => setFilling(false)} />
+          ) : editing ? (
             <>
               <textarea value={draft} onChange={(e) => setDraft(e.target.value)} style={{ minHeight: 320 }} />
               <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
@@ -132,7 +174,7 @@ export function ArtifactCard({
             <Md source={artifact.content} />
           )}
 
-          {report && !editing && (
+          {report && !editing && !filling && (
             <div style={{ marginTop: 12 }}>
               <AtsReportView report={report} />
             </div>

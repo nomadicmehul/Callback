@@ -621,6 +621,64 @@ select:focus {
   padding-left: 20px;
 }
 
+/* ─── Draft gaps ([fill in: …]) ─────────────────────────────────────────── */
+mark.gap {
+  background: color-mix(in srgb, var(--warn) 24%, transparent);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.gap-banner {
+  align-items: center;
+  margin-bottom: 10px;
+}
+.gaps {
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--border));
+  background: color-mix(in srgb, var(--warn) 5%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.gaps-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+.gap-row {
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+}
+.gaps-head + .gap-row {
+  border-top: none;
+}
+.gap-ctx {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+.gap-row.dropped .gap-ctx {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+.gap-input {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+.gap-input textarea {
+  min-height: 0;
+  font-family: var(--font);
+  font-size: 13px;
+}
+.gap-foot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+
 /* ─── Misc ──────────────────────────────────────────────────────────────── */
 .empty-hero {
   text-align: center;

@@ -8,6 +8,7 @@ import path from 'node:path';
 import PDFDocument from 'pdfkit';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
 import type { Application, Artifact, ArtifactKind, AtsReport } from '@shared/types';
+import { findGaps } from '@shared/placeholders';
 import { FILES_DIR } from './paths';
 
 export interface Run {
@@ -20,7 +21,6 @@ export interface Block {
   text: string;
 }
 
-const PLACEHOLDER_RE = /\[fill in:[^\]]*\]/gi;
 const STOP = new Set(
   (
     'the a an and or of to in for with on at by from as is are be we you your our their this that will who what which role team work years experience including etc ' +
@@ -28,7 +28,8 @@ const STOP = new Set(
   ).split(/\s+/),
 );
 
-export const findPlaceholders = (md: string): string[] => (md.match(PLACEHOLDER_RE) ?? []).map((s) => s.trim());
+/** Gaps the human still has to fill — placeholders quoted in editorial notes don't count. */
+export const findPlaceholders = (md: string): string[] => findGaps(md).map((g) => g.token);
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
 
@@ -83,7 +84,39 @@ export const plainText = (blocks: Block[]): string => blocks.map((b) => b.text).
 
 // ─── PDF (pdfkit, standard Helvetica → embedded, selectable text) ───────────
 
+// The standard Helvetica only encodes Windows-1252 ("WinAnsi"): anything outside
+// it prints as garbage ("→" comes out as "!'"). Use a faithful stand-in where one
+// exists, strip accents that have a plain base letter, and report the rest.
+const WIN_ANSI_EXTRA = new Set('€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ');
+const STAND_IN: Record<string, string> = {
+  '→': '->', '←': '<-', '⇒': '=>', '↔': '<->', '≥': '>=', '≤': '<=', '≈': '~', '≠': '!=',
+  '−': '-', '‐': '-', '‑': '-', '‒': '-', '―': '—', '′': "'", '″': '"', '✓': '', '✔': '', '✗': '', '★': '*',
+  'Ł': 'L', 'ł': 'l', 'Đ': 'D', 'đ': 'd', 'Ħ': 'H', 'ħ': 'h', 'ı': 'i', 'Ŀ': 'L', 'ŀ': 'l', 'ẞ': 'SS',
+};
+const winAnsi = (ch: string) => {
+  const c = ch.codePointAt(0) ?? 0;
+  return ch === '\t' || (c >= 0x20 && c <= 0x7e) || (c >= 0xa0 && c <= 0xff) || WIN_ANSI_EXTRA.has(ch);
+};
+
+/** Text the PDF font can draw, plus the characters it had to leave out. */
+export function pdfSafe(s: string): { text: string; lost: string[] } {
+  const lost = new Set<string>();
+  let text = '';
+  for (const ch of s) {
+    if (winAnsi(ch)) text += ch;
+    else if (ch in STAND_IN) text += STAND_IN[ch];
+    else {
+      const bare = ch.normalize('NFD').replace(/[̀-ͯ]/g, '');
+      if (bare && [...bare].every(winAnsi)) text += bare;
+      else if (!/[​-‍⁠︎️]/.test(ch)) lost.add(ch); // joiners/selectors vanish quietly
+    }
+  }
+  return { text, lost: [...lost] };
+}
+
 export function renderPdf(blocks: Block[], opts: { title: string; author?: string; pageSize?: 'A4' | 'LETTER' }): Promise<Buffer> {
+  const safe = (t: string) => pdfSafe(t).text;
+  blocks = blocks.map((b) => ({ ...b, text: safe(b.text), runs: b.runs.map((r) => ({ ...r, text: safe(r.text) })) }));
   return new Promise((resolve, reject) => {
     const doc: any = new PDFDocument({
       size: opts.pageSize ?? 'A4',
@@ -278,7 +311,15 @@ export async function analyzeAts(input: {
     score -= 30;
     issues.push({
       level: 'block',
-      text: `${placeholders.length} unfilled placeholder(s) — replace with real details before exporting: ${placeholders.slice(0, 3).join(', ')}${placeholders.length > 3 ? '…' : ''}`,
+      text: `${placeholders.length} unfilled placeholder(s) — fill each with a real detail (or drop it) before exporting: ${placeholders.slice(0, 3).join(', ')}${placeholders.length > 3 ? '…' : ''}`,
+    });
+  }
+  const lost = [...new Set(blocks.flatMap((b) => pdfSafe(b.text).lost))];
+  if (lost.length) {
+    score -= 5;
+    issues.push({
+      level: 'warn',
+      text: `The PDF font can't draw ${lost.slice(0, 6).map((c) => `"${c}"`).join(' ')} — they're left out of the PDF. Rephrase them, or send the DOCX (Word keeps every character).`,
     });
   }
   if (isLetter ? pages > 1 : pages > 2) {
