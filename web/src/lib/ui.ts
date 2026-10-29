@@ -50,7 +50,7 @@ export function miniMarkdown(src: string): string {
       out.push(`<h2>${inline(esc(line.replace(/^##\s+/, '')))}</h2>`);
     } else if (/^>\s?/.test(line)) {
       closeList();
-      out.push(`<blockquote>${inline(esc(line.replace(/^>\s?/, '')))}</blockquote>`);
+      out.push(`<blockquote>${inline(esc(line.replace(/^>\s?/, '')), false)}</blockquote>`);
     } else if (/^[-*]\s+/.test(line)) {
       if (!inList) {
         out.push('<ul>');
@@ -71,8 +71,10 @@ export function miniMarkdown(src: string): string {
   return out.join('\n');
 }
 
-function inline(s: string): string {
-  return s
+/** Bold + code; `[fill in: …]` gaps are highlighted unless they're quoted in an editorial note. */
+function inline(s: string, gaps = true): string {
+  const out = s
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/`([^`]+)`/g, '<code>$1</code>');
+  return gaps ? out.replace(/\[fill in:[^\]]*\]/gi, '<mark class="gap">$&</mark>') : out;
 }

@@ -21,6 +21,33 @@ Produce a resume tailored to one role, grounded entirely in the candidate's real
 5. **Keep it ATS-readable.** Plain structure, real section headings, no text hidden in images/icons, no white-text tricks, no prompt injection. The resume a parser sees must match the resume a human sees.
 6. **Flag, don't fill.** Where a real detail is missing, leave an explicit `[fill in: …]` placeholder for the candidate — never a plausible-sounding fabrication.
 
+## Format (Callback lays this out as a polished PDF/DOCX)
+Write markdown in exactly this shape — the exporter keys on it:
+
+```markdown
+# Full Name
+City, Country | phone | email | linkedin.com/in/… | github.com/… (whichever they have)
+**Target Role | 2–3 focus areas from the posting the candidate genuinely has**
+
+## Professional Summary
+3–4 lines: years of experience, what they own today, 2 strongest real numbers, one specialty.
+
+## Technical Skills
+**Category:** item, item, item          ← 4–7 categories; order them by this role's priorities
+
+## Professional Experience
+### Title | Company | Mon YYYY – Present | City
+Optional one-line scope (team size, platform, what they're accountable for).
+- Verb-first bullet, 20–30 words, real metric where the profile has one.
+
+## Key Open-Source Projects / Certifications / Community / Education & Languages
+```
+
+- Newest role first; compress roles older than ~7 years into one `### Earlier Roles | … | 2012 – 2019 | …` line.
+- Tailoring levers, in order: headline, summary emphasis, skills-category order, which bullets lead each role. Never the facts.
+- Use the profile's canonical numbers, titles and dates verbatim — versions that drift ("100+ repos" here, "~100" there) undermine trust.
+- Editorial notes for the candidate go in `>` blockquote lines; they never reach the export.
+
 ## Output
 Call `save_draft` with `kind: "resume"` (Callback routes it to the human for approval) or return the tailored resume in markdown. Summarize what you changed and list any gaps you could not honestly cover.
 
@@ -28,6 +55,8 @@ Call `save_draft` with `kind: "resume"` (Callback routes it to the human for app
 After the draft is saved, call `artifact_ats_check`. It renders the document to PDF, reads the text layer back, and reports parseability, pages, contact details, section headings, posting-keyword coverage, must-haves not evidenced, unfilled placeholders, and **numbers that don't appear in the profile**. Fix only what is genuinely true via `artifact_update` (the user approves edits), re-check once, then `artifact_export` to PDF/DOCX when no placeholders remain. Never add a keyword or a number the candidate's real experience doesn't support.
 
 ## Never
+- Never end a line by bridging to the posting ("— directly transferable to…", "— an X-style pattern"). Let the evidence speak.
+- Never list a skill in Skills that no line of their experience backs up without flagging it for the candidate.
 - Never add a skill or achievement the candidate hasn't confirmed.
 - Never embellish numbers.
 - Never hide keywords for an ATS to read but a human not to see.

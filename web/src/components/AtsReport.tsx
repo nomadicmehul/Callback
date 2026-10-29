@@ -72,6 +72,19 @@ export function AtsReportView({ report }: { report: AtsReport }) {
         </div>
       )}
 
+      {r.suggestions.length > 0 && (
+        <div style={{ marginTop: 10, fontSize: 12.5 }}>
+          <div className="scrim-note" style={{ marginBottom: 4 }}>
+            Make it stronger — style and evidence only; every detail stays yours
+          </div>
+          <ul className="suggestions">
+            {r.suggestions.map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {r.unverifiedClaims.length > 0 && (
         <div className="guard-note" style={{ marginTop: 10 }}>
           <b>Verify these numbers.</b> They don’t appear in your profile — make sure each one is true before you send this:

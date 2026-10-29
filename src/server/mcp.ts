@@ -24,7 +24,7 @@ import {
   listDueDrills,
 } from './db';
 import { scheduleDrill, completeSession, recordDrillResult, INTERVIEW_MODES } from './interview';
-import { getArtifact, updateArtifact } from './db';
+import { getArtifact, listArtifactsOfKind, updateArtifact } from './db';
 import { parseResumeMarkdown, renderPdf, analyzeAts, summarizeAts, exportArtifact, findPlaceholders } from './resume';
 
 const ok = (text: string) => ({ content: [{ type: 'text' as const, text }] });
@@ -290,8 +290,15 @@ export function jobsearchTools(ctx: RunContext) {
         const art = getArtifact(args.artifactId);
         if (!art) return ok(`No artifact ${args.artifactId}.`);
         const app = getApplication(art.applicationId);
-        const pdf = await renderPdf(parseResumeMarkdown(art.content), { title: art.title });
-        const report = await analyzeAts({ pdf, source: art.content, application: app, profile: getConfig().candidateProfile ?? '', kind: art.kind });
+        const pdf = await renderPdf(parseResumeMarkdown(art.content), { title: art.title, kind: art.kind });
+        const report = await analyzeAts({
+          pdf,
+          source: art.content,
+          application: app,
+          profile: getConfig().candidateProfile ?? '',
+          kind: art.kind,
+          siblings: listArtifactsOfKind(art.kind, art.id).map((a) => a.content),
+        });
         ctx.emit({ type: 'tool_result', tool: 'artifact_ats_check', summary: `ATS score ${report.score}/100` });
         return ok(summarizeAts(report));
       },
