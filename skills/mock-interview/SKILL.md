@@ -1,7 +1,7 @@
 ---
 name: mock-interview
 description: Run a personalized mock interview and coach the candidate to genuinely improve — behavioral (STAR), technical patterns, or system design. Scores answers on real signals, tracks recurring weaknesses across sessions, and schedules spaced repetition. Prep BEFORE/outside the interview — never real-time assistance during a live interview.
-license: MIT
+license: Apache-2.0
 ---
 
 # Mock Interview

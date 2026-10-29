@@ -1,7 +1,7 @@
 ---
 name: resume-tailor
 description: Tailor a resume to a specific job honestly — align the candidate's REAL experience to the role's must-haves, lead with quantified impact, and keep it ATS-readable. Never fabricates experience, titles, dates, or metrics. Use after jd-analyzer.
-license: MIT
+license: Apache-2.0
 ---
 
 # Resume Tailor

@@ -5,7 +5,7 @@
 **A local-first, open-source AI job-search & interview-prep agent.**
 *Your data never leaves your machine. Built on Claude.*
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-3ddc97.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-3ddc97.svg)](LICENSE)
 [![Built on Claude](https://img.shields.io/badge/built%20on-Claude-6ea8fe.svg)](https://www.anthropic.com/claude)
 [![Local-first](https://img.shields.io/badge/local--first-no%20cloud%2C%20no%20account-b692f6.svg)](#privacy--ethics)
 
@@ -163,7 +163,7 @@ If Callback helped you land an interview, or you just like where it's going, **[
 
 ## License
 
-[MIT](LICENSE).
+[Apache License 2.0](LICENSE) — see [NOTICE](NOTICE).
 
 ---
 

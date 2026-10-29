@@ -1,7 +1,7 @@
 ---
 name: outcome
 description: Log what happened with an application (applied, screen, interview, offer, rejected, ghosted) and run a retro that proposes durable lessons for the candidate's memory. Use whenever the user reports news about a job they applied to — "they rejected me", "I got a screen", "offer came in", "never heard back".
-license: MIT
+license: Apache-2.0
 argument-hint: <application or company> <stage> [note]
 ---
 

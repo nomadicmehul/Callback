@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Callback — a local-first, open-source AI job-search & interview-prep agent. Your data never leaves your machine. Built on Claude.",
   "type": "module",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": [
     "job-search",
     "interview-prep",
@@ -28,7 +28,8 @@
     "dist",
     "skills",
     ".claude-plugin",
-    ".env.example"
+    ".env.example",
+    "NOTICE"
   ],
   "scripts": {
     "dev": "concurrently -n server,web -c cyan,magenta \"npm:dev:server\" \"npm:dev:web\"",

@@ -1,7 +1,7 @@
 ---
 name: cover-letter
 description: Draft a short, specific, honest cover letter in the candidate's own voice — connecting their real experience to this role and company, without AI-generic filler. Use when a role asks for one or when it meaningfully helps.
-license: MIT
+license: Apache-2.0
 ---
 
 # Cover Letter
