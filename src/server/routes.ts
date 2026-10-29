@@ -40,6 +40,7 @@ import {
   listUpcomingDrills,
   listDrillsByApplication,
   getArtifact,
+  listArtifactsOfKind,
   updateArtifact,
 } from './db';
 
@@ -257,8 +258,15 @@ export function apiRouter(): Hono {
     const art = getArtifact(c.req.param('id'));
     if (!art) return c.json({ error: 'not found' }, 404);
     const app = getApplication(art.applicationId);
-    const pdf = await renderPdf(parseResumeMarkdown(art.content), { title: art.title });
-    const report = await analyzeAts({ pdf, source: art.content, application: app, profile: getConfig().candidateProfile ?? '', kind: art.kind });
+    const pdf = await renderPdf(parseResumeMarkdown(art.content), { title: art.title, kind: art.kind });
+    const report = await analyzeAts({
+      pdf,
+      source: art.content,
+      application: app,
+      profile: getConfig().candidateProfile ?? '',
+      kind: art.kind,
+      siblings: listArtifactsOfKind(art.kind, art.id).map((a) => a.content),
+    });
     return c.json({ report });
   });
 

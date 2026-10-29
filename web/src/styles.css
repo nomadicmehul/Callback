@@ -621,6 +621,18 @@ select:focus {
   padding-left: 20px;
 }
 
+.suggestions {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-dim);
+}
+.suggestions li {
+  margin-bottom: 3px;
+}
+.suggestions li::marker {
+  color: var(--accent);
+}
+
 /* ─── Draft gaps ([fill in: …]) ─────────────────────────────────────────── */
 mark.gap {
   background: color-mix(in srgb, var(--warn) 24%, transparent);

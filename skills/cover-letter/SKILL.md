@@ -17,12 +17,31 @@ Write a cover letter a recruiter won't instantly spot as AI boilerplate.
 1. Pull the role's top 2–3 must-haves (from jd-analyzer) and the candidate's matching real experience.
 2. Open with a specific hook — why this role/company, grounded in something true.
 3. Body: 1–2 short paragraphs, each a concrete example tying the candidate's real work to a need.
-4. Close with a brief, genuine line — no groveling, no clichés.
-5. Keep it to ~250–350 words, one page.
+4. If a top must-have isn't in their real experience, name it in one honest sentence and how they'd ramp up — it reads as confident, and it's true.
+5. Close with a brief, genuine line (where they're based, when they can start) — no groveling, no clichés.
+6. Keep it to ~250–400 words, one page.
+
+## Format (Callback lays this out as a one-page letter)
+```markdown
+# Full Name
+City, Country | phone | email | linkedin.com/in/…
+
+City, 29 October 2026
+
+Company – Hiring Team
+**Application: Exact Posting Title**
+
+Dear Company Hiring Team,
+
+Paragraphs separated by blank lines.
+
+Kind regards,
+Full Name
+```
 
 ## Output
 Call `save_draft` with `kind: "cover_letter"` (routed to the human to approve), or return the letter. Note anything you asserted that the candidate must verify is true.
 
 ## Never
 - Never claim passion or experience the candidate hasn't expressed.
-- Never reuse the same letter across companies with the name swapped.
+- Never reuse the same letter across companies with the name swapped — and watch for recycled paragraphs too; `artifact_ats_check` flags sentences shared with the candidate's other letters.

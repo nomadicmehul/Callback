@@ -239,6 +239,8 @@ export interface AtsReport {
   /** Numbers in the resume that don't appear in the profile — verify they're true. */
   unverifiedClaims: string[];
   issues: { level: 'block' | 'warn' | 'info'; text: string }[];
+  /** Short, concrete ways to make the document stronger — style and evidence, never invented content. */
+  suggestions: string[];
 }
 
 // ─── Interview prep ─────────────────────────────────────────────────────────
