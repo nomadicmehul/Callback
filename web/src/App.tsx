@@ -7,6 +7,16 @@ import { MemoryView } from './components/Memory';
 import { SettingsView } from './components/Settings';
 import { ActivityFeed } from './components/Activity';
 import { InterviewView } from './components/Interview';
+import { ClaudeCodeCard } from './components/ClaudeCodeCard';
+
+const CC_HIDDEN_KEY = 'callback.claudeCodeBanner.hidden';
+const readHidden = () => {
+  try {
+    return localStorage.getItem(CC_HIDDEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
 
 type View = 'pipeline' | 'interview' | 'activity' | 'memory' | 'settings';
 
@@ -29,6 +39,15 @@ export function App() {
   const [toasts, setToasts] = useState<{ id: number; text: string }[]>([]);
   // Which pipeline job (and optionally which session) the Interview view should open on.
   const [interviewTarget, setInterviewTarget] = useState<InterviewTarget | null>(null);
+  const [ccHidden, setCcHidden] = useState(readHidden);
+  function hideCc() {
+    setCcHidden(true);
+    try {
+      localStorage.setItem(CC_HIDDEN_KEY, '1');
+    } catch {
+      /* private window — hidden for this visit only */
+    }
+  }
 
   // Toasts for completed runs.
   const seen = useRef(0);
@@ -66,7 +85,12 @@ export function App() {
         <div className="spacer" />
         <div className="foot">
           <div style={{ marginBottom: 6 }}>
-            <span className={`badge ${mode ? 'mode-demo' : 'mode-live'}`}>
+            <span
+              className={`badge ${mode ? 'mode-demo' : 'mode-live'}`}
+              onClick={mode ? () => setView('settings') : undefined}
+              title={mode ? 'No API key — see how to run the agents for real' : undefined}
+              style={mode ? { cursor: 'pointer' } : undefined}
+            >
               <span className="dot" /> {mode ? 'demo mode' : 'live · Claude'}
             </span>
           </div>
@@ -105,6 +129,9 @@ export function App() {
                     Add my resume →
                   </button>
                 </div>
+              )}
+              {state.health && !state.health.hasApiKey && !ccHidden && (
+                <ClaudeCodeCard pluginDir={state.health.pluginDir} compact onDismiss={hideCc} />
               )}
               <Dashboard stats={state.stats} />
               {state.applications.length === 0 ? (
