@@ -12,7 +12,7 @@ import type {
 } from '@shared/types';
 import { APP_VERSION } from './version';
 import { DATA_DIR, PLUGIN_DIR } from './paths';
-import { getConfig, setConfig, hasApiKey, hasProfile } from './config';
+import { cleanDocFormat, getConfig, getDocFormat, setConfig, hasApiKey, hasProfile } from './config';
 import { resolveApproval } from './approvals';
 import {
   startTailorRun,
@@ -57,6 +57,7 @@ import {
   updateExperience,
 } from './db';
 import { groundTruth, importFromCv, importGitHub, importLink, importLinkedIn, structureStory } from './experience';
+import { learnFormat } from './cvformat';
 
 const EXPERIENCE_KINDS: ExperienceKind[] = ['story', 'role', 'project', 'education', 'certification', 'link'];
 const EXPERIENCE_STATUSES: ExperienceStatus[] = ['proposed', 'active', 'archived'];
@@ -93,7 +94,12 @@ export function apiRouter(): Hono {
   // ─── Config (never echoes the API key back) ──────────────────────────────
   api.get('/config', (c) => {
     const cfg = getConfig();
-    return c.json({ hasApiKey: hasApiKey(), candidateProfile: cfg.candidateProfile ?? '', profileSource: cfg.profileSource ?? null });
+    return c.json({
+      hasApiKey: hasApiKey(),
+      candidateProfile: cfg.candidateProfile ?? '',
+      profileSource: cfg.profileSource ?? null,
+      docFormat: getDocFormat(),
+    });
   });
   api.post('/config', async (c) => {
     const body = await c.req.json().catch(() => ({}));
@@ -107,8 +113,9 @@ export function apiRouter(): Hono {
         ? { ...(prev.profileSource ?? { filename: 'pasted', kind: 'pasted' }), chars: body.candidateProfile.length, updatedAt: new Date().toISOString() }
         : undefined;
     }
+    if (body.docFormat && typeof body.docFormat === 'object') patch.docFormat = cleanDocFormat(body.docFormat, getDocFormat());
     setConfig(patch);
-    return c.json({ ok: true, hasApiKey: hasApiKey(), hasProfile: hasProfile() });
+    return c.json({ ok: true, hasApiKey: hasApiKey(), hasProfile: hasProfile(), docFormat: getDocFormat() });
   });
 
   // ─── Profile (the ground truth for every draft) ──────────────────────────
@@ -132,6 +139,22 @@ export function apiRouter(): Hono {
       return c.json({ text, source });
     } catch (err: any) {
       return c.json({ error: `Could not read that file: ${String(err?.message ?? err)}` }, 422);
+    }
+  });
+
+  // Learn a document format from the person's own CV (.docx). Returns a preview — saving is a separate step.
+  api.post('/format/learn', async (c) => {
+    const file = (await c.req.parseBody()).file;
+    if (!(file instanceof File)) return c.json({ error: 'Upload your CV (.docx) in the "file" field.' }, 400);
+    if (/\.pdf$/i.test(file.name)) {
+      return c.json({ error: 'PDFs don’t keep the format details Callback needs — upload the Word version (.docx) of your CV.' }, 422);
+    }
+    if (file.size > 20 * 1024 * 1024) return c.json({ error: 'File too large (20 MB max).' }, 400);
+    try {
+      const { format, found } = learnFormat(new Uint8Array(await file.arrayBuffer()), file.name);
+      return c.json({ format: cleanDocFormat(format, getDocFormat()), found });
+    } catch (err: any) {
+      return c.json({ error: String(err?.message ?? err) }, 422);
     }
   });
 
@@ -336,7 +359,7 @@ export function apiRouter(): Hono {
     const art = getArtifact(c.req.param('id'));
     if (!art) return c.json({ error: 'not found' }, 404);
     const app = getApplication(art.applicationId);
-    const pdf = await renderPdf(parseResumeMarkdown(art.content), { title: art.title, kind: art.kind });
+    const pdf = await renderPdf(parseResumeMarkdown(art.content), { title: art.title, kind: art.kind, style: getDocFormat() });
     const report = await analyzeAts({
       pdf,
       source: art.content,

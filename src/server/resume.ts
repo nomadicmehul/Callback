@@ -9,6 +9,9 @@ import PDFDocument from 'pdfkit';
 import { AlignmentType, BorderStyle, Document, HeadingLevel, Packer, Paragraph, Tab, TabStopType, TextRun } from 'docx';
 import type { Application, Artifact, ArtifactKind, AtsReport } from '@shared/types';
 import { findGaps } from '@shared/placeholders';
+import { DEFAULT_DOC_FORMAT, type DocFormat } from '@shared/types';
+import { getDocFormat } from './config';
+import { findFontFiles } from './fonts';
 import { FILES_DIR } from './paths';
 
 export interface Run {
@@ -109,12 +112,12 @@ export const DATE_RANGE = new RegExp(
 );
 const allBold = (b: Block) => b.runs.every((r) => r.bold || !r.text.trim());
 
-function layout(blocks: Block[], kind?: ArtifactKind): Placed[] {
+function layout(blocks: Block[], kind?: ArtifactKind, order: DocFormat['headerOrder'] = 'auto'): Placed[] {
   const letter = kind === 'cover_letter';
   const house = letter || kind === 'resume' || kind == null;
   let header = false;
   let dated = false;
-  return blocks.map((b, i) => {
+  const placed = blocks.map((b, i) => {
     let role: Role = 'text';
     if (b.type === 'h1') {
       role = 'name';
@@ -133,6 +136,18 @@ function layout(blocks: Block[], kind?: ArtifactKind): Placed[] {
     if (role === 'date') dated = true;
     return { ...b, role };
   });
+  return order === 'auto' ? placed : orderHeader(placed, order);
+}
+
+/** Contact line before or after the headline when the person chose an order; otherwise the draft's own. */
+function orderHeader(placed: Placed[], order: DocFormat['headerOrder']): Placed[] {
+  const i = placed.findIndex((b) => b.role === 'name');
+  if (i < 0) return placed;
+  let j = i + 1;
+  while (j < placed.length && (placed[j].role === 'contact' || placed[j].role === 'headline')) j++;
+  const head = placed.slice(i + 1, j);
+  const first = order === 'contact-first' ? 'contact' : 'headline';
+  return [...placed.slice(0, i + 1), ...head.filter((b) => b.role === first), ...head.filter((b) => b.role !== first), ...placed.slice(j)];
 }
 
 /** "Title | Company | Jan 2026 – Present | City" → title, the rest, and the right-aligned dates/location. */
@@ -153,10 +168,15 @@ export function normalizeEntry(text: string): string {
   return [title, rest, when].filter(Boolean).join(' | ');
 }
 
-const NAVY = '1F3A5F';
 const MUTED = '555555';
 const SOFT = '333333';
 const INK = '111111';
+const FONTS = {
+  sans: { regular: 'Helvetica', bold: 'Helvetica-Bold', italic: 'Helvetica-Oblique', docx: 'Calibri' },
+  serif: { regular: 'Times-Roman', bold: 'Times-Bold', italic: 'Times-Italic', docx: 'Cambria' },
+} as const;
+const PAGE_TWIPS = { A4: { width: 11906, height: 16838 }, LETTER: { width: 12240, height: 15840 } } as const;
+const heading = (t: string, style: DocFormat) => (style.headingCase === 'upper' ? t.toUpperCase() : t);
 
 // ─── PDF (pdfkit, standard Helvetica → embedded, selectable text) ───────────
 
@@ -192,21 +212,38 @@ export function pdfSafe(s: string): { text: string; lost: string[] } {
 
 export function renderPdf(
   blocks: Block[],
-  opts: { title: string; author?: string; kind?: ArtifactKind; pageSize?: 'A4' | 'LETTER' },
+  opts: { title: string; author?: string; kind?: ArtifactKind; style?: DocFormat },
 ): Promise<Buffer> {
   const safe = (t: string) => pdfSafe(t).text;
   const placed = layout(
     blocks.map((b) => ({ ...b, text: safe(b.text), runs: b.runs.map((r) => ({ ...r, text: safe(r.text) })) })),
     opts.kind,
+    opts.style?.headerOrder,
   );
+  const style = opts.style ?? DEFAULT_DOC_FORMAT;
+  const ACCENT = style.accent.replace('#', '');
+  const NAME = (style.nameColor ?? style.accent).replace('#', '');
+  const S = style.sizes;
   const letter = opts.kind === 'cover_letter';
-  const center = !letter && opts.kind !== 'interview_prep';
+  const center = !letter && opts.kind !== 'interview_prep' && style.align === 'center';
+  const own = style.fontName ? findFontFiles(style.fontName) : null; // the CV's own font, when installed here
   return new Promise((resolve, reject) => {
     const doc: any = new PDFDocument({
-      size: opts.pageSize ?? 'A4',
-      margins: { top: 42, bottom: 42, left: 46, right: 46 },
+      size: style.pageSize,
+      margins: { top: style.margin - 4, bottom: style.margin - 4, left: style.margin, right: style.margin },
       info: { Title: opts.title, Author: opts.author ?? '', Creator: 'Callback' },
     });
+    let F: { regular: string; bold: string; italic: string } = FONTS[style.font];
+    if (own) {
+      try {
+        doc.registerFont('CV', own.regular);
+        doc.registerFont('CV-Bold', own.bold);
+        doc.registerFont('CV-Italic', own.italic);
+        F = { regular: 'CV', bold: 'CV-Bold', italic: 'CV-Italic' };
+      } catch {
+        /* unreadable font file — keep the standard family */
+      }
+    }
     const chunks: Buffer[] = [];
     doc.on('data', (c: Buffer) => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -214,19 +251,23 @@ export function renderPdf(
 
     const left = doc.page.margins.left;
     const width = doc.page.width - left - doc.page.margins.right;
-    const BODY = letter ? 10.5 : 9.5;
+    // Standard Helvetica runs wider than most CV fonts; half a point smaller keeps the same line lengths.
+    const BODY = letter ? S.body + 0.5 : F.regular === 'Helvetica' ? S.body - 0.5 : S.body;
     const hex = (c: string) => `#${c}`;
+    // Embedded fonts ligate "ti", "fi", "tf"… — pretty on paper, but the text layer then reads "platorm".
+    // An ATS reads the text layer, so ligatures stay off.
+    const plain = F.regular === 'CV' ? { features: { liga: false, clig: false, dlig: false, calt: false, rlig: false } } : {};
 
     const writeRuns = (runs: Run[], o: { size: number; x?: number; y?: number; w?: number; italic?: boolean; align?: string }) => {
       runs.forEach((r, i) => {
-        doc.font(r.bold ? 'Helvetica-Bold' : o.italic ? 'Helvetica-Oblique' : 'Helvetica').fontSize(o.size);
-        const opt = { continued: i < runs.length - 1, width: o.w ?? width, lineGap: 1.5, align: o.align ?? 'left' };
+        doc.font(r.bold ? F.bold : o.italic ? F.italic : F.regular).fontSize(o.size);
+        const opt = { continued: i < runs.length - 1, width: o.w ?? width, lineGap: 1.5, align: o.align ?? 'left', ...plain };
         if (i === 0 && o.x != null && o.y != null) doc.text(r.text, o.x, o.y, opt);
         else doc.text(r.text, opt);
       });
       doc.x = left;
     };
-    const rule = (y: number, w: number) => doc.moveTo(left, y).lineTo(left + width, y).lineWidth(w).strokeColor(hex(NAVY)).stroke();
+    const rule = (y: number, w: number) => doc.moveTo(left, y).lineTo(left + width, y).lineWidth(w).strokeColor(hex(ACCENT)).stroke();
     // Headings and role lines never sit alone at the bottom of a page.
     const keepWithNext = (lines: number) => {
       if (doc.y + lines * BODY * 1.4 > doc.page.maxY()) doc.addPage();
@@ -237,8 +278,8 @@ export function renderPdf(
       doc.fillColor(hex(INK));
       switch (b.role) {
         case 'name':
-          doc.font('Helvetica-Bold').fontSize(letter ? 20 : 22).fillColor(hex(NAVY));
-          doc.text(b.text, left, doc.y, { width, align: center ? 'center' : 'left' });
+          doc.font(F.bold).fontSize(letter ? S.name - 2 : S.name).fillColor(hex(NAME));
+          doc.text(b.text, left, doc.y, { width, align: center ? 'center' : 'left', ...plain });
           doc.moveDown(0.1);
           break;
         case 'contact':
@@ -246,15 +287,15 @@ export function renderPdf(
           doc.fillColor(hex(b.role === 'contact' ? SOFT : INK));
           if (b.role === 'contact' && /\s\|\s/.test(b.text)) {
             // Wrap between "|" parts only — never inside an email or a link.
-            doc.font('Helvetica').fontSize(9);
+            doc.font(F.regular).fontSize(S.contact);
             const rows: string[] = [];
             for (const part of b.text.split(/\s+\|\s+/)) {
               const last = rows[rows.length - 1];
               if (last && doc.widthOfString(`${last} | ${part}`) <= width) rows[rows.length - 1] = `${last} | ${part}`;
               else rows.push(part);
             }
-            for (const row of rows) doc.text(row, left, doc.y, { width, align: center ? 'center' : 'left', lineGap: 1.5 });
-          } else writeRuns(b.runs, { size: b.role === 'contact' ? 9 : 10.5, x: left, y: doc.y, align: center ? 'center' : 'left' });
+            for (const row of rows) doc.text(row, left, doc.y, { width, align: center ? 'center' : 'left', lineGap: 1.5, ...plain });
+          } else writeRuns(b.runs, { size: b.role === 'contact' ? S.contact : S.headline, x: left, y: doc.y, align: center ? 'center' : 'left' });
           doc.moveDown(0.1);
           if (letter && next?.role !== 'contact' && next?.role !== 'headline') {
             rule(doc.y + 3, 1);
@@ -265,9 +306,9 @@ export function renderPdf(
         case 'section':
           keepWithNext(4);
           doc.moveDown(0.6);
-          doc.font('Helvetica-Bold').fontSize(10.5).fillColor(hex(NAVY));
-          doc.text(b.text.toUpperCase(), left, doc.y, { width, characterSpacing: 0.3 });
-          rule(doc.y + 1, 0.8);
+          doc.font(F.bold).fontSize(S.heading).fillColor(hex(ACCENT));
+          doc.text(heading(b.text, style), left, doc.y, { width, characterSpacing: style.headingCase === 'upper' ? 0.3 : 0, ...plain });
+          if (style.headingRule) rule(doc.y + 1, 0.8);
           doc.moveDown(0.35);
           break;
         case 'entry': {
@@ -277,9 +318,9 @@ export function renderPdf(
           const y = doc.y;
           let rw = 0;
           if (when) {
-            doc.font('Helvetica-Oblique').fontSize(9).fillColor(hex(MUTED));
+            doc.font(F.italic).fontSize(BODY - 0.5).fillColor(hex(MUTED));
             rw = doc.widthOfString(when);
-            doc.text(when, left + width - rw, y + 1, { width: rw + 2, lineBreak: false });
+            doc.text(when, left + width - rw, y + 1, { width: rw + 2, lineBreak: false, ...plain });
             doc.fillColor(hex(INK));
           }
           writeRuns([{ text: title, bold: true }, ...(rest ? [{ text: `  |  ${rest}`, bold: false }] : [])], {
@@ -298,7 +339,7 @@ export function renderPdf(
           break;
         case 'bullet': {
           const y = doc.y;
-          doc.font('Helvetica').fontSize(BODY).text('•', left + 4, y, { lineBreak: false });
+          doc.font(F.regular).fontSize(BODY).text('•', left + 4, y, { lineBreak: false });
           writeRuns(b.runs, { size: BODY, x: left + 16, y, w: width - 16 });
           doc.moveDown(0.15);
           break;
@@ -320,21 +361,28 @@ export function renderPdf(
 // ─── DOCX (docx package) ────────────────────────────────────────────────────
 // Same layout as the PDF, so the Word file a recruiter opens matches what the ATS check read.
 
-export async function renderDocx(blocks: Block[], opts: { title: string; kind?: ArtifactKind }): Promise<Buffer> {
+export async function renderDocx(blocks: Block[], opts: { title: string; kind?: ArtifactKind; style?: DocFormat }): Promise<Buffer> {
+  const style = opts.style ?? DEFAULT_DOC_FORMAT;
+  const ACCENT = style.accent.replace('#', '');
+  const font = style.fontName ?? FONTS[style.font].docx;
+  const NAME = (style.nameColor ?? style.accent).replace('#', '');
+  const S = style.sizes;
+  const half = (pt: number) => Math.round(pt * 2); // docx sizes are half-points
+  const page = PAGE_TWIPS[style.pageSize];
   const letter = opts.kind === 'cover_letter';
-  const align = !letter && opts.kind !== 'interview_prep' ? AlignmentType.CENTER : AlignmentType.LEFT;
-  const RIGHT_TAB = 11906 - 2 * 1000; // A4 width minus side margins, in twips
-  const base = letter ? 21 : 20; // half-points; set on every run too, for viewers that ignore docDefaults
-  const line = (size: number) => ({ style: BorderStyle.SINGLE, size, color: NAVY, space: 2 });
+  const align = !letter && opts.kind !== 'interview_prep' && style.align === 'center' ? AlignmentType.CENTER : AlignmentType.LEFT;
+  const RIGHT_TAB = page.width - 2 * style.margin * 20; // page width minus side margins, in twips
+  const base = half(letter ? S.body + 0.5 : S.body); // set on every run too, for viewers that ignore docDefaults
+  const line = (size: number) => ({ style: BorderStyle.SINGLE, size, color: ACCENT, space: 2 });
   const runs = (rs: Run[], o: { size?: number; color?: string; italics?: boolean; bold?: boolean } = {}) =>
     rs.map((r) => new TextRun({ text: r.text, bold: r.bold || o.bold, italics: o.italics, size: o.size ?? base, color: o.color }));
 
-  const placed = layout(blocks, opts.kind);
+  const placed = layout(blocks, opts.kind, style.headerOrder);
   const children = placed.map((b, i) => {
     const next = placed[i + 1];
     switch (b.role) {
       case 'name':
-        return new Paragraph({ alignment: align, spacing: { after: 40 }, children: [new TextRun({ text: b.text, bold: true, size: letter ? 40 : 44, color: NAVY })] });
+        return new Paragraph({ alignment: align, spacing: { after: 40 }, children: [new TextRun({ text: b.text, bold: true, size: half(letter ? S.name - 2 : S.name), color: NAME })] });
       case 'contact':
       case 'headline': {
         const last = next?.role !== 'contact' && next?.role !== 'headline';
@@ -342,15 +390,15 @@ export async function renderDocx(blocks: Block[], opts: { title: string; kind?: 
           alignment: align,
           spacing: { after: last ? (letter ? 280 : 80) : 20 },
           border: letter && last ? { bottom: line(8) } : undefined,
-          children: runs(b.runs, b.role === 'contact' ? { size: 18, color: SOFT } : { size: 21 }),
+          children: runs(b.runs, b.role === 'contact' ? { size: half(S.contact), color: SOFT } : { size: half(S.headline) }),
         });
       }
       case 'section':
         return new Paragraph({
           heading: HeadingLevel.HEADING_1,
           spacing: { before: 200, after: 80 },
-          border: { bottom: line(6) },
-          children: [new TextRun({ text: b.text.toUpperCase(), bold: true, size: 21, color: NAVY, font: 'Calibri' })],
+          border: style.headingRule ? { bottom: line(6) } : undefined,
+          children: [new TextRun({ text: heading(b.text, style), bold: true, size: half(S.heading), color: ACCENT, font })],
         });
       case 'entry': {
         const { title, rest, when } = splitEntry(b.text);
@@ -359,9 +407,9 @@ export async function renderDocx(blocks: Block[], opts: { title: string; kind?: 
           tabStops: [{ type: TabStopType.RIGHT, position: RIGHT_TAB }],
           spacing: { before: 100, after: 20 },
           children: [
-            new TextRun({ text: title, bold: true, size: 21 }),
-            ...(rest ? [new TextRun({ text: `  |  ${rest}`, size: 21 })] : []),
-            ...(when ? [new TextRun({ children: [new Tab(), when], italics: true, size: 18, color: MUTED })] : []),
+            new TextRun({ text: title, bold: true, size: half(S.body + 0.5) }),
+            ...(rest ? [new TextRun({ text: `  |  ${rest}`, size: half(S.body + 0.5) })] : []),
+            ...(when ? [new TextRun({ children: [new Tab(), when], italics: true, size: half(S.body - 1), color: MUTED })] : []),
           ],
         });
       }
@@ -380,8 +428,8 @@ export async function renderDocx(blocks: Block[], opts: { title: string; kind?: 
   const doc = new Document({
     title: opts.title,
     creator: 'Callback',
-    styles: { default: { document: { run: { font: 'Calibri', size: base } } } },
-    sections: [{ properties: { page: { margin: { top: 900, bottom: 900, left: 1000, right: 1000 } } }, children }],
+    styles: { default: { document: { run: { font, size: base } } } },
+    sections: [{ properties: { page: { size: page, margin: { top: (style.margin - 4) * 20, bottom: (style.margin - 4) * 20, left: style.margin * 20, right: style.margin * 20 } } }, children }],
   });
   return Buffer.from(await Packer.toBuffer(doc));
 }
@@ -396,7 +444,7 @@ export async function exportArtifact(
   const blocks = parseResumeMarkdown(art.content);
   const base = slug([app?.role, app?.company, art.kind.replace('_', '-')].filter(Boolean).join('-')) || art.kind;
   const filename = `${base}.${format}`;
-  const opts = { title: art.title, kind: art.kind };
+  const opts = { title: art.title, kind: art.kind, style: getDocFormat() };
   const buffer = format === 'pdf' ? await renderPdf(blocks, opts) : await renderDocx(blocks, opts);
   const dir = path.join(FILES_DIR, 'exports', app?.id ?? 'misc');
   fs.mkdirSync(dir, { recursive: true });

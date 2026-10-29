@@ -14,6 +14,7 @@ import type {
   RunEvent,
   AnswerScore,
   AtsReport,
+  DocFormat,
   Drill,
   Experience,
   ExperienceInput,
@@ -71,9 +72,9 @@ export const api = {
   stats: () => fetch('/api/stats').then(j<DashboardStats>),
 
   getConfig: () =>
-    fetch('/api/config').then(j<{ hasApiKey: boolean; candidateProfile: string; profileSource: ProfileSource | null }>),
-  saveConfig: (body: { apiKey?: string; candidateProfile?: string }) =>
-    post('/api/config', body).then(j<{ ok: boolean; hasApiKey: boolean; hasProfile: boolean }>),
+    fetch('/api/config').then(j<{ hasApiKey: boolean; candidateProfile: string; profileSource: ProfileSource | null; docFormat: DocFormat }>),
+  saveConfig: (body: { apiKey?: string; candidateProfile?: string; docFormat?: Partial<DocFormat> }) =>
+    post('/api/config', body).then(j<{ ok: boolean; hasApiKey: boolean; hasProfile: boolean; docFormat: DocFormat }>),
 
   getProfile: () => fetch('/api/profile').then(j<{ text: string; source: ProfileSource | null; hasProfile: boolean }>),
   uploadProfile: (file: File) => {
@@ -117,6 +118,12 @@ export const api = {
   answerDrill: (id: string, answer: string) =>
     post(`/api/drills/${id}/answer`, { answer }).then(j<{ score: AnswerScore; drill: Drill }>),
   prep: (applicationId: string) => post(`/api/applications/${applicationId}/prep`).then(j<{ runId: string }>),
+
+  learnFormat: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return fetch('/api/format/learn', { method: 'POST', body: fd }).then(j<{ format: DocFormat; found: string[] }>);
+  },
 
   // Experience bank
   experiences: () => fetch('/api/experience').then(j<Experience[]>),

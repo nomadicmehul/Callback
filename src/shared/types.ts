@@ -119,6 +119,49 @@ export interface MemoryNote {
   createdAt: string;
 }
 
+// ─── Document format (how exported resumes and letters look) ───────────────
+
+export interface DocFormat {
+  pageSize: 'A4' | 'LETTER';
+  /** The two lines under the name: contact line then bold headline by default; 'auto' keeps the CV's own order. */
+  headerOrder: 'auto' | 'contact-first' | 'headline-first';
+  /** Name and header on resumes (letters are always left-aligned). */
+  align: 'center' | 'left';
+  font: 'sans' | 'serif';
+  /** Section headings: "PROFESSIONAL EXPERIENCE" or as written ("Professional Experience"). */
+  headingCase: 'upper' | 'as-written';
+  /** Headings and rules, as a hex colour. */
+  accent: string;
+  /** The name's colour; null = the accent. */
+  nameColor: string | null;
+  /** An exact font, usually learned from the person's own CV ("Lato", "Calibri"). DOCX uses it as is; the PDF
+   *  embeds it when it's installed on this machine, else falls back to the `font` family. */
+  fontName: string | null;
+  /** Point sizes. */
+  sizes: { name: number; contact: number; headline: number; heading: number; body: number };
+  /** A rule under each section heading. */
+  headingRule: boolean;
+  /** Page margin in points (left/right; top/bottom a touch less). */
+  margin: number;
+  /** The CV file this format was learned from, if any. */
+  learnedFrom: string | null;
+}
+
+export const DEFAULT_DOC_FORMAT: DocFormat = {
+  pageSize: 'A4',
+  headerOrder: 'contact-first',
+  align: 'center',
+  font: 'sans',
+  headingCase: 'upper',
+  accent: '#1F3A5F',
+  nameColor: null,
+  fontName: null,
+  sizes: { name: 22, contact: 9, headline: 10.5, heading: 10.5, body: 10 },
+  headingRule: true,
+  margin: 46,
+  learnedFrom: null,
+};
+
 // ─── Experience bank (the candidate's real experience, stored once) ─────────
 // Every resume and cover letter is a view of these facts, so titles, dates and
 // numbers stop drifting between versions. Imported entries start 'proposed'

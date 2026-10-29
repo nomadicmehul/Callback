@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import type { RunContext } from './runctx';
 import type { ApplicationStatus, ArtifactKind, JdAnalysis, MemoryKind, OutcomeStage } from '@shared/types';
-import { getConfig, setConfig } from './config';
+import { getConfig, getDocFormat, setConfig } from './config';
 import { postingGuard } from './guard';
 import { fetchPosting } from './posting';
 import {
@@ -348,7 +348,7 @@ export function jobsearchTools(ctx: RunContext) {
         const art = getArtifact(args.artifactId);
         if (!art) return ok(`No artifact ${args.artifactId}.`);
         const app = getApplication(art.applicationId);
-        const pdf = await renderPdf(parseResumeMarkdown(art.content), { title: art.title, kind: art.kind });
+        const pdf = await renderPdf(parseResumeMarkdown(art.content), { title: art.title, kind: art.kind, style: getDocFormat() });
         const report = await analyzeAts({
           pdf,
           source: art.content,
