@@ -258,6 +258,88 @@ export function extractPosting(html: string, url: URL): { meta: PostingMeta; tex
   return { meta: { role, company, location, employmentType, datePosted, companySource }, text };
 }
 
+// ─── Official job-board APIs ────────────────────────────────────────────────
+// Greenhouse, Lever and Ashby pages build the description in the browser, so the
+// HTML alone holds little more than the application form. Their public posting
+// APIs return the same posting whole — the sanctioned route, no scraping.
+
+interface BoardApi {
+  api: string;
+  parse: (json: any) => { meta: PostingMeta; text: string } | null;
+}
+
+const fromHtml = (html: unknown) => htmlToText(decode(String(html ?? ''))).text;
+const isoDay = (v: unknown) => {
+  const d = v == null || v === '' ? null : new Date(typeof v === 'number' ? v : String(v));
+  return d && !Number.isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : null;
+};
+
+export function boardApiFor(url: URL): BoardApi | null {
+  const host = url.hostname.toLowerCase();
+  const [org, a, b] = url.pathname.split('/').filter(Boolean);
+  if (!org) return null;
+  const company = companyFromUrl(url);
+  const meta = (role: unknown, location: unknown, employmentType: unknown, datePosted: unknown, name?: unknown): PostingMeta => {
+    const co = (name ? cleanCompany(String(name)) : null) ?? company;
+    return {
+      role: role ? cleanRole(String(role), co) : null,
+      company: co,
+      location: location ? squash(String(location)) : null,
+      employmentType: employmentType ? squash(String(employmentType)) : null,
+      datePosted: isoDay(datePosted),
+      companySource: name ? 'json-ld' : 'url',
+    };
+  };
+
+  // job-boards.greenhouse.io/<board>/jobs/<id> (also boards., and the .eu. variants)
+  if (/^(job-)?boards(\.eu)?\.greenhouse\.io$/.test(host) && a === 'jobs' && /^\d+$/.test(b ?? '')) {
+    const apiHost = host.includes('.eu.') ? 'boards-api.eu.greenhouse.io' : 'boards-api.greenhouse.io';
+    return {
+      api: `https://${apiHost}/v1/boards/${encodeURIComponent(org)}/jobs/${b}`,
+      parse: (j) => (j?.content ? { meta: meta(j.title, j.location?.name, null, j.first_published ?? j.updated_at, j.company_name), text: fromHtml(j.content) } : null),
+    };
+  }
+  // jobs.lever.co/<company>/<uuid>
+  if ((host === 'jobs.lever.co' || host === 'jobs.eu.lever.co') && /^[0-9a-f-]{36}$/i.test(a ?? '')) {
+    const apiHost = host === 'jobs.eu.lever.co' ? 'api.eu.lever.co' : 'api.lever.co';
+    return {
+      api: `https://${apiHost}/v0/postings/${encodeURIComponent(org)}/${a}`,
+      parse: (j) => {
+        if (!j?.text) return null;
+        const lists = (j.lists ?? []).map((l: any) => `${l.text ?? ''}\n${fromHtml(l.content)}`);
+        const text = [j.descriptionPlain ?? fromHtml(j.description), ...lists, j.additionalPlain ?? ''].filter(Boolean).join('\n\n');
+        return { meta: meta(j.text, j.categories?.location, j.categories?.commitment, j.createdAt), text };
+      },
+    };
+  }
+  // jobs.ashbyhq.com/<org>/<uuid> — the board API lists every open job; pick this one.
+  if (host === 'jobs.ashbyhq.com' && /^[0-9a-f-]{36}$/i.test(a ?? '')) {
+    return {
+      api: `https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(org)}`,
+      parse: (j) => {
+        const job = (j?.jobs ?? []).find((x: any) => x.id === a);
+        return job ? { meta: meta(job.title, job.location, job.employmentType, job.publishedAt), text: job.descriptionPlain ?? fromHtml(job.descriptionHtml) } : null;
+      },
+    };
+  }
+  return null;
+}
+
+async function fetchFromBoardApi(url: URL): Promise<{ meta: PostingMeta; text: string } | null> {
+  const board = boardApiFor(url);
+  if (!board) return null;
+  try {
+    const api = new URL(board.api);
+    if (!(await robotsAllows(api))) return null;
+    const res = await fetch(api, { headers: { 'user-agent': UA, accept: 'application/json' }, signal: AbortSignal.timeout(12000) });
+    if (!res.ok) return null;
+    const got = board.parse(await res.json());
+    return got && got.text.length >= 200 ? got : null;
+  } catch {
+    return null; // fall back to the page itself
+  }
+}
+
 // ─── Fetch a posting by URL (politely), then extract + guard ────────────────
 
 export async function fetchPosting(input: string): Promise<FetchedPosting> {
@@ -269,6 +351,13 @@ export async function fetchPosting(input: string): Promise<FetchedPosting> {
   }
   if (!/^https?:$/.test(url.protocol)) throw new Error('Only http(s) URLs are supported.');
   if (isPrivateHost(url.hostname)) throw new Error('Refusing to fetch a private/local address.');
+
+  const board = await fetchFromBoardApi(url);
+  if (board) {
+    const { text, flags } = postingGuard(board.text);
+    return { ...board.meta, text: text.slice(0, 20000), title: board.meta.role, flags, url: url.toString() };
+  }
+
   if (!(await robotsAllows(url))) {
     throw new Error('This site disallows automated fetching (robots.txt). Paste the posting text instead.');
   }

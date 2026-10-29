@@ -371,8 +371,11 @@ function lines(text: string): string[] {
     .filter((l) => l.length > 0);
 }
 
+/** Application-form chrome that pages sometimes carry next to the posting ("* indicates a required field"). */
+const FORM_LINE = /indicates a required field|^(first|last) name\b|accepted file types|^attach\b|submit application|select\.\.\.|public official|gender identity|reasonable accommodation|equal opportunity|^(resume|cv|cover letter)\s*[/*]/i;
+
 function heuristicAnalysis(app: Application, profile: string): JdAnalysis {
-  const ls = lines(app.jdText);
+  const ls = lines(app.jdText).filter((l) => !FORM_LINE.test(l));
   const mustHaves = ls.filter((l) => /\b(required|must|years|proficient|strong|expert|deep|solid)\b/i.test(l)).slice(0, 8);
   const niceToHaves = ls.filter((l) => /\b(nice to have|preferred|bonus|plus|familiar)\b/i.test(l)).slice(0, 6);
   const responsibilities = ls
