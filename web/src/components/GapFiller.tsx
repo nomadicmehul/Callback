@@ -15,6 +15,11 @@ function Context({ gap }: { gap: Gap }) {
   );
 }
 
+/** Gaps that ask for real experience (an example, an outcome) — worth keeping in the
+ *  experience bank so the next draft doesn't ask again. Name, headline, openers don't. */
+const KEEPABLE = (hint: string) =>
+  /example|outcome|result|number|experience/i.test(hint) && !/name|headline|summary|opening|based|start|honest|ramp up/i.test(hint);
+
 /** Walks the human through each `[fill in: …]` gap: type the real detail, or
  *  drop it when there's nothing true to say. Callback never suggests the content. */
 export function GapFiller({
@@ -25,12 +30,14 @@ export function GapFiller({
 }: {
   content: string;
   busy: boolean;
-  onSave: (fills: GapFill[]) => void;
+  /** `keep`: indexes of answers to also save to the experience bank. */
+  onSave: (fills: GapFill[], keep: number[]) => void;
   onCancel: () => void;
 }) {
   const gaps = findGaps(content);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [dropped, setDropped] = useState<Set<number>>(new Set());
+  const [keep, setKeep] = useState<Set<number>>(() => new Set(gaps.filter((g) => KEEPABLE(g.hint)).map((g) => g.index)));
 
   const fills: GapFill[] = gaps.flatMap((g): GapFill[] =>
     dropped.has(g.index) ? [{ index: g.index, drop: true }] : answers[g.index]?.trim() ? [{ index: g.index, text: answers[g.index] }] : [],
@@ -75,6 +82,20 @@ export function GapFiller({
               </button>
             </div>
           )}
+          {!dropped.has(g.index) && answers[g.index]?.trim() && (
+            <label className="gap-keep">
+              <input
+                type="checkbox"
+                checked={keep.has(g.index)}
+                onChange={() => {
+                  const next = new Set(keep);
+                  next.has(g.index) ? next.delete(g.index) : next.add(g.index);
+                  setKeep(next);
+                }}
+              />
+              Save to my experience bank — next drafts use it instead of asking again
+            </label>
+          )}
         </div>
       ))}
       <div className="gap-foot">
@@ -85,7 +106,11 @@ export function GapFiller({
         <button className="btn ghost sm" onClick={onCancel} disabled={busy}>
           Cancel
         </button>
-        <button className="btn primary sm" onClick={() => onSave(fills)} disabled={busy || !fills.length}>
+        <button
+          className="btn primary sm"
+          onClick={() => onSave(fills, fills.filter((f) => 'text' in f && keep.has(f.index)).map((f) => f.index))}
+          disabled={busy || !fills.length}
+        >
           Save {fills.length || ''}
         </button>
       </div>

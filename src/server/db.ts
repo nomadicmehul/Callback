@@ -9,6 +9,11 @@ import type {
   ArtifactKind,
   JdAnalysis,
   MemoryKind,
+  Experience,
+  ExperienceInput,
+  ExperienceKind,
+  ExperienceSource,
+  ExperienceStatus,
   MemoryNote,
   MemoryStatus,
   Outcome,
@@ -160,6 +165,25 @@ function migrate(): void {
       reps INTEGER NOT NULL DEFAULT 0,
       last_score REAL,
       created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS experiences (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'proposed',
+      title TEXT NOT NULL,
+      org TEXT,
+      period TEXT,
+      situation TEXT,
+      action TEXT,
+      result TEXT,
+      details TEXT,
+      tags_json TEXT NOT NULL DEFAULT '[]',
+      url TEXT,
+      source TEXT NOT NULL DEFAULT 'manual',
+      source_ref TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_turns_session ON interview_turns(session_id);
@@ -438,6 +462,101 @@ export function searchMemory(queryText: string, scope?: string, limit = 8): Memo
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
   return scored.map((s) => s.note);
+}
+
+// ─── Experience bank ────────────────────────────────────────────────────────
+
+function rowToExperience(r: any): Experience {
+  return {
+    id: r.id,
+    kind: r.kind as ExperienceKind,
+    status: r.status as ExperienceStatus,
+    title: r.title,
+    org: r.org ?? null,
+    period: r.period ?? null,
+    situation: r.situation ?? null,
+    action: r.action ?? null,
+    result: r.result ?? null,
+    details: r.details ?? null,
+    tags: JSON.parse(r.tags_json),
+    url: r.url ?? null,
+    source: r.source as ExperienceSource,
+    sourceRef: r.source_ref ?? null,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+const EXPERIENCE_FIELDS = ['kind', 'status', 'title', 'org', 'period', 'situation', 'action', 'result', 'details', 'url', 'source', 'sourceRef'] as const;
+const column = (f: string) => f.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+const blankToNull = (v: unknown) => (v == null || String(v).trim() === '' ? null : String(v).trim());
+const cleanTags = (tags: unknown) =>
+  Array.isArray(tags) ? [...new Set(tags.map((t) => String(t).trim().toLowerCase()).filter(Boolean))].slice(0, 20) : [];
+
+export function addExperience(input: ExperienceInput): Experience {
+  const id = `exp_${nanoid(10)}`;
+  const ts = now();
+  db.prepare(
+    `INSERT INTO experiences (id, kind, status, title, org, period, situation, action, result, details, tags_json, url, source, source_ref, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    id,
+    input.kind ?? 'story',
+    input.status ?? 'proposed',
+    input.title.trim(),
+    blankToNull(input.org),
+    blankToNull(input.period),
+    blankToNull(input.situation),
+    blankToNull(input.action),
+    blankToNull(input.result),
+    blankToNull(input.details),
+    JSON.stringify(cleanTags(input.tags)),
+    blankToNull(input.url),
+    input.source ?? 'manual',
+    blankToNull(input.sourceRef),
+    ts,
+    ts,
+  );
+  return getExperience(id)!;
+}
+
+export function getExperience(id: string): Experience | null {
+  const r = db.prepare('SELECT * FROM experiences WHERE id = ?').get(id);
+  return r ? rowToExperience(r) : null;
+}
+
+export function listExperiences(status?: ExperienceStatus): Experience[] {
+  const rows = status
+    ? db.prepare('SELECT * FROM experiences WHERE status = ? ORDER BY updated_at DESC').all(status)
+    : db.prepare('SELECT * FROM experiences ORDER BY updated_at DESC').all();
+  return rows.map(rowToExperience);
+}
+
+export function updateExperience(id: string, patch: Partial<ExperienceInput>): Experience | null {
+  const cur = getExperience(id);
+  if (!cur) return null;
+  const sets: string[] = [];
+  const vals: (string | null)[] = [];
+  for (const f of EXPERIENCE_FIELDS) {
+    if (!(f in patch)) continue;
+    const v = (patch as any)[f];
+    if (f === 'title' && !String(v ?? '').trim()) continue; // a title is required
+    sets.push(`${column(f)} = ?`);
+    vals.push(f === 'kind' || f === 'status' || f === 'source' ? String(v) : blankToNull(v));
+  }
+  if ('tags' in patch) {
+    sets.push('tags_json = ?');
+    vals.push(JSON.stringify(cleanTags(patch.tags)));
+  }
+  if (!sets.length) return cur;
+  db.prepare(`UPDATE experiences SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`).run(...vals, now(), id);
+  return getExperience(id);
+}
+
+/** Same kind + title + org already stored (even if discarded) — imports never re-add it. */
+export function findExperienceDuplicate(kind: ExperienceKind, title: string, org: string | null): Experience | null {
+  const key = (s: string | null) => (s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return listExperiences().find((e) => e.kind === kind && key(e.title) === key(title) && key(e.org) === key(org)) ?? null;
 }
 
 // ─── Outcomes ───────────────────────────────────────────────────────────────
