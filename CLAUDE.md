@@ -58,7 +58,9 @@ src/server/
   approvals.ts bridge: canUseTool ↔ dashboard (SSE) — requestApproval() resolves when the human clicks
   bus.ts / runctx.ts  event bus + RunContext { runId, applicationId, sessionId?, emit }
   profile.ts  CV ingestion (PDF via unpdf, DOCX via mammoth, text)
-  cvtext.ts   reading CV text: reflow PDF line wraps, heading/bullet/role-line detection, name/contact
+  cvtext.ts   reading CV text: parseHeader (name/contact/headline block), reflow PDF line wraps, heading/bullet/role lines
+  cvformat.ts learnFormat(): a DocFormat read from the person's own .docx (font, sizes, colours, header order, headings, page)
+  fonts.ts    findFontFiles(): a learned font's TTF/OTF on this machine, embedded in PDFs (ligatures off — ATS text layer)
   experience.ts experience bank: imports (CV, LinkedIn ZIP via node:zlib, GitHub API, a public link), quick-add
               structuring, bankText()/groundTruth() — what drafts, profile_get and the honesty check read
   config.ts   ~/.callback/config.json (0600): apiKey, candidateProfile, profileSource
@@ -112,6 +114,10 @@ bundled `dist/` even in a checkout. Use a different port per concurrent test ser
 - Approvals: only writes need sign-off (`save_draft` except `interview_prep`, `artifact_update`).
   Reads and `save_jd_analysis` are auto-allowed.
 - Memory notes: `proposed | active | retired`; agents search ACTIVE notes and only ever *propose*.
+- Document format: `config.json` → `docFormat` (`getDocFormat()` fills defaults; invalid values keep the stored
+  one). Renderers take `style`; the default header is name → contact line → bold headline; `headerOrder: 'auto'` keeps the
+  draft's own order, and the drafter then keeps the CV's
+  (`parseHeader()` in cvtext.ts reads name / headline / contact as a block — never through `reflow()`).
 - Experience bank: `proposed | active | archived`. Imports and agent saves arrive `proposed`; only `active`
   entries reach drafts (`groundTruth()` = profile text + active bank). Anything the human typed is theirs, so it
   saves `active`. Imports dedupe on kind + title + org, including archived entries (a discard sticks).

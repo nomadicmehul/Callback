@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { FILES_DIR } from './paths';
-import { normalizeText } from './guard';
+import { htmlToText, normalizeText } from './guard';
 
 export type ProfileKind = 'pdf' | 'docx' | 'text';
 
@@ -20,8 +20,9 @@ export async function extractProfileText(filename: string, data: Uint8Array): Pr
   if (ext === '.docx' || isZip) {
     const mod: any = await import('mammoth');
     const mammoth = mod.default ?? mod;
-    const result = await mammoth.extractRawText({ buffer: Buffer.from(data) });
-    return { text: normalizeText(String(result.value ?? '')).text, kind: 'docx' };
+    // Via HTML, not raw text: Word lists are numbering, not "•" characters, and raw text would drop them.
+    const result = await mammoth.convertToHtml({ buffer: Buffer.from(data) });
+    return { text: normalizeText(htmlToText(String(result.value ?? '')).text).text, kind: 'docx' };
   }
   return { text: normalizeText(Buffer.from(data).toString('utf8')).text, kind: 'text' };
 }

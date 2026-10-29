@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { HealthInfo, ProfileSource } from '@shared/types';
 import { ClaudeCodeCard } from './ClaudeCodeCard';
+import { DocFormatPanel } from './DocFormat';
 import { api } from '../lib/api';
 
 export function SettingsView({ health, onSaved }: { health: HealthInfo | null; onSaved: () => void }) {
@@ -91,6 +92,8 @@ export function SettingsView({ health, onSaved }: { health: HealthInfo | null; o
           />
         </label>
       </div>
+
+      <DocFormatPanel />
 
       <div className="panel" style={{ padding: 18, marginBottom: 18 }}>
         <h3 style={{ margin: '0 0 6px', fontSize: 14 }}>Claude API key</h3>

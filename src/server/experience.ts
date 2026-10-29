@@ -8,7 +8,7 @@ import { inflateRawSync } from 'node:zlib';
 import type { Experience, ExperienceInput, ExperienceKind, ImportResult } from '@shared/types';
 import { addExperience, findExperienceDuplicate, listExperiences } from './db';
 import { getConfig } from './config';
-import { guessContact, guessName, isBulletLine, isHeadingLine, isRoleLine, reflow } from './cvtext';
+import { isBulletLine, isHeadingLine, isRoleLine, parseHeader, reflow } from './cvtext';
 import { splitEntry } from './resume';
 import { htmlToText, isPrivateHost, normalizeText, postingGuard, robotsAllows, UA } from './guard';
 import { metaTags } from './posting';
@@ -77,8 +77,7 @@ const hasNumber = (s: string) => /\d/.test(s.replace(/\b(19|20)\d{2}\b/g, ''));
 /** Roles, education, projects and credentials from CV text — plus every quantified
  *  bullet as a story seed the candidate can grow into a full story. */
 export function entriesFromCv(text: string): ExperienceInput[] {
-  const name = guessName(text);
-  const contact = guessContact(text);
+  const body = text.split(/\r?\n/).slice(parseHeader(text).lines).join('\n'); // name, contact, headline aren't entries
   const out: ExperienceInput[] = [];
   let section = '';
   let current: ExperienceInput | null = null;
@@ -88,8 +87,8 @@ export function entriesFromCv(text: string): ExperienceInput[] {
   };
   const kindFor = (): ExperienceKind => (/educat|academ/.test(section) ? 'education' : /project|open.?source|portfolio/.test(section) ? 'project' : 'role');
 
-  for (const t of reflow(text).split('\n')) {
-    if (!t || t === name || t === contact) continue;
+  for (const t of reflow(body).split('\n')) {
+    if (!t) continue;
     if (isHeadingLine(t)) {
       flush();
       section = t.replace(/^#+\s*/, '').toLowerCase();

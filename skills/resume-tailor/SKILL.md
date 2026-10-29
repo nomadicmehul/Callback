@@ -43,6 +43,7 @@ Optional one-line scope (team size, platform, what they're accountable for).
 ## Key Open-Source Projects / Certifications / Community / Education & Languages
 ```
 
+- Contact line first (every part, no truncation), then the bold headline. The export applies the person's own choice from Settings → Document format if they set a different order.
 - Newest role first; compress roles older than ~7 years into one `### Earlier Roles | … | 2012 – 2019 | …` line.
 - Tailoring levers, in order: headline, summary emphasis, skills-category order, which bullets lead each role. Never the facts.
 - Use the profile's canonical numbers, titles and dates verbatim — versions that drift ("100+ repos" here, "~100" there) undermine trust.
