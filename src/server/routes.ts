@@ -61,7 +61,8 @@ import {
   updateExperience,
   addGapAnswers,
 } from './db';
-import { groundTruth, importFromCv, importGitHub, importLink, importLinkedIn, structureStory } from './experience';
+import { groundTruth, importFromCv, importGitHub, importLink, importLinkedIn, structureStory, structureStoryLive } from './experience';
+import { experienceCoverage } from './coverage';
 import { learnFormat } from './cvformat';
 import { suggestGaps } from './gapsuggest';
 import { gapKind } from '@shared/placeholders';
@@ -312,10 +313,15 @@ export function apiRouter(): Hono {
 
   api.post('/experience/quick', async (c) => {
     const body = await c.req.json().catch(() => ({}));
-    const text = String(body.text ?? '').trim();
+    const text = String(body.text ?? '').trim().slice(0, 4000);
     if (text.length < 10) return c.json({ error: 'Write a sentence or two about what you did.' }, 400);
-    return c.json(structureStory(text.slice(0, 4000)));
+    // A model sorts it when a key is set (never in demo mode); the heuristic is the offline path and the fallback.
+    const live = process.env.CALLBACK_DEMO === '1' || !hasApiKey() ? null : await structureStoryLive(text);
+    return c.json(live ?? structureStory(text));
   });
+
+  // What the tracked jobs ask for, grouped across jobs, against the bank and the CV.
+  api.get('/experience/coverage', (c) => c.json(experienceCoverage()));
 
   const imported = async (c: any, run: () => unknown) => {
     try {
@@ -428,12 +434,20 @@ export function apiRouter(): Hono {
     const art = getArtifact(c.req.param('id'));
     if (!art) return c.json({ error: 'not found' }, 404);
     const format = c.req.query('format') === 'docx' ? 'docx' : 'pdf';
+    // A preview is shown inline and never saved — a draft with gaps can be looked at, not exported.
+    const preview = format === 'pdf' && c.req.query('preview') === '1';
     const placeholders = findPlaceholders(art.content);
-    if (placeholders.length) {
+    if (placeholders.length && !preview) {
       return c.json(
         { error: `Fill in the ${placeholders.length} placeholder(s) first — Callback won't export a scaffold: ${placeholders.slice(0, 3).join(', ')}` },
         422,
       );
+    }
+    if (preview) {
+      const pdf = await renderPdf(parseResumeMarkdown(art.content), { title: art.title, kind: art.kind, style: getDocFormat() });
+      c.header('content-type', 'application/pdf');
+      c.header('content-disposition', 'inline; filename="preview.pdf"');
+      return c.body(new Uint8Array(pdf));
     }
     const { buffer, filename } = await exportArtifact(art, getApplication(art.applicationId), format);
     c.header('content-type', format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');

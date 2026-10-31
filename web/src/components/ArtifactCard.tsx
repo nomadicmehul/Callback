@@ -157,6 +157,14 @@ export function ArtifactCard({
               )}
               {EXPORTABLE.has(artifact.kind) && (
                 <>
+                  <button
+                    className="btn sm"
+                    onClick={() => window.open(api.previewUrl(artifact.id), '_blank', 'noopener')}
+                    disabled={busy}
+                    title="See the formatted PDF exactly as it will export — gaps show as-is, nothing is saved"
+                  >
+                    👁 Preview
+                  </button>
                   <button className="btn sm" onClick={() => download('pdf')} disabled={busy}>
                     ⬇ PDF
                   </button>
