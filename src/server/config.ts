@@ -40,6 +40,11 @@ export function getConfig(): StoredConfig {
   return { ...read() };
 }
 
+/** Forget the cached file — after a backup import or a reset rewrote config.json directly. */
+export function reloadConfig(): void {
+  cache = null;
+}
+
 export function setConfig(patch: Partial<StoredConfig>): StoredConfig {
   const next = { ...read(), ...patch };
   write(next);

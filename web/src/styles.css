@@ -1592,3 +1592,20 @@ hr.sep {
   margin-top: 4px;
   font-size: 12px;
 }
+
+/* ─── Backup, move & start fresh ────────────────────────────────────────── */
+.backup-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.backup-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-dim);
+}
+.backup-list li {
+  margin-bottom: 3px;
+}

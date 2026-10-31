@@ -76,6 +76,10 @@ src/server/
               number the person didn't type), bankText()/groundTruth() — what drafts, profile_get and the honesty check read
   coverage.ts experienceCoverage(): what the tracked jobs ask for, grouped across jobs (must-haves + keywords, bare
               keywords fold into the must-have naming them), each marked covered by a story / a CV line / nothing
+  backup.ts   exportBackup() → one .zip (VACUUM INTO snapshot of callback.db, config.json without the API key unless
+              asked, files/ minus exports, manifest.json); importBackup() writes a safety copy, swaps DB/config/files,
+              keeps the local key, re-runs initDb(); resetData('jobs'|'all') backs up first; copies in ~/.callback/backups
+  zip.ts      zipFiles()/unzipFiles(): plain ZIP with node:zlib only (no ZIP64) — backups and the LinkedIn import
   config.ts   ~/.callback/config.json (0600): apiKey, candidateProfile, profileSource
   models.ts   role → model (orchestrator opus-5-5, writer sonnet-5-5, extractor haiku-5-5)
 src/tui/      Ink terminal UI (talks to the server over HTTP + SSE parsed from fetch — Node has no EventSource)
@@ -112,6 +116,8 @@ Then: upload a profile (`POST /api/profile/upload`), create an application (`POS
 `tailor: true`), wait for approvals (`GET /api/approvals`, resolve with `POST /api/approvals/:id`),
 read the run events (`GET /api/runs/:id/events`), check `GET /api/applications/:id` (artifacts,
 materials, interviews, drills), run `POST /api/artifacts/:id/ats` and `GET …/download?format=pdf`.
+`GET /api/backup` → `POST /api/reset {scope, confirm: scope}` → `POST /api/backup/import` (multipart `file`)
+round-trips the whole data dir; destructive routes echo their scope as `confirm`.
 Never test against the real `~/.callback`. `CALLBACK_PREFER_DIST=1` makes the launcher run the
 bundled `dist/` even in a checkout. Use a different port per concurrent test server.
 
@@ -184,6 +190,9 @@ Arch Blueprint for system design, CloudCaptain for cloud/DevOps) with ≤ 4 next
 (`InterviewSession.recommendations`), the `study_resources` tool and `study` skill, the weighted audit (`audit.ts`: six
 categories, normalised keyword matching, `GET /api/artifacts/:id/audit[?download=1]`, `artifact_audit` tool, category
 bars + "⬇ Audit" in the dashboard).
+
+Backup & move (done): Settings → export one .zip / import it on another machine / start fresh with a safety copy first;
+`backup_export` + `backup_import` plugin tools. See `backup.ts`.
 
 Experience bank, round two (done): coverage across tracked jobs ("3 of your 5 targets ask for X — no story yet",
 `GET /api/experience/coverage`, `experience_coverage` tool, Add-a-story prefill), live-driver structuring of quick-add
