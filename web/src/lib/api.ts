@@ -14,6 +14,7 @@ import type {
   RunEvent,
   AnswerScore,
   AtsReport,
+  Coverage,
   DocFormat,
   Drill,
   Experience,
@@ -131,6 +132,9 @@ export const api = {
   addExperience: (body: ExperienceInput) => post('/api/experience', body).then(j<{ experience: Experience }>),
   updateExperience: (id: string, body: Partial<ExperienceInput>) => patch(`/api/experience/${id}`, body).then(j<{ experience: Experience }>),
   quickStory: (text: string) => post('/api/experience/quick', { text }).then(j<{ draft: ExperienceInput; type: string }>),
+  coverage: () => fetch('/api/experience/coverage').then(j<Coverage[]>),
+  /** The formatted PDF in a new tab — works on drafts with gaps (shown as-is), never saved. */
+  previewUrl: (id: string) => `/api/artifacts/${id}/download?format=pdf&preview=1`,
   importCv: () => post('/api/experience/import/cv').then(j<ImportResult>),
   importGitHub: (username: string) => post('/api/experience/import/github', { username }).then(j<ImportResult>),
   importLink: (url: string) => post('/api/experience/import/link', { url }).then(j<ImportResult>),

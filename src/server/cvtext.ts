@@ -82,6 +82,8 @@ export function reflow(profile: string): string {
 /** First profile line that looks like a person's name (2–4 words, no digits/@). */
 export function guessName(profile: string): string | null {
   const first = profile.split(/\n/).map((l) => l.trim()).find(Boolean) ?? '';
+  // A CV with no header starts with a section heading or a role line — neither is a person's name.
+  if (isHeadingLine(first) || isRoleLine(first)) return null;
   // "Jane Doe — Senior Backend Engineer" / "Jane Doe | jane@x.com" → "Jane Doe"
   const clean = first.replace(/^#+\s*/, '').split(/\s+[—–|·,]\s*|\s{2,}/)[0]?.trim() ?? '';
   return /^[A-Za-zÀ-ÿ.'-]+(?:\s+[A-Za-zÀ-ÿ.'-]+){1,3}$/.test(clean) && clean.length <= 40 ? clean : null;

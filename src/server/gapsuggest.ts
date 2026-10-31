@@ -115,7 +115,9 @@ export function suggestGaps(artifact: Artifact, app: Application | null): GapSug
   });
 }
 
-/** Reusable standing answers (where they're based, when they can start) — for drafts and agents. */
-export function standingAnswers(): { availability: string | null } {
-  return { availability: listGapAnswers('availability')[0]?.answer.replace(/\.$/, '') ?? null };
+/** Reusable standing answers — where they're based and when they can start, and the header details
+ *  (name, contact line) they typed into an earlier draft — for drafts and agents. */
+export function standingAnswers(): { availability: string | null; name: string | null; contact: string | null } {
+  const last = (kind: string) => listGapAnswers(kind)[0]?.answer.trim() || null;
+  return { availability: last('availability')?.replace(/\.$/, '') ?? null, name: last('name'), contact: last('contact') };
 }

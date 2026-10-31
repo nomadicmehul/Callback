@@ -64,7 +64,10 @@ src/server/
   gapsuggest.ts suggestGaps(): per-gap tip, pre-fill and options from CV, confirmed stories and earlier gap answers
   fonts.ts    findFontFiles(): a learned font's TTF/OTF on this machine, embedded in PDFs (ligatures off — ATS text layer)
   experience.ts experience bank: imports (CV, LinkedIn ZIP via node:zlib, GitHub API, a public link), quick-add
-              structuring, bankText()/groundTruth() — what drafts, profile_get and the honesty check read
+              structuring (heuristic; structureStoryLive() uses Haiku when a key is set and drops any result with a
+              number the person didn't type), bankText()/groundTruth() — what drafts, profile_get and the honesty check read
+  coverage.ts experienceCoverage(): what the tracked jobs ask for, grouped across jobs (must-haves + keywords, bare
+              keywords fold into the must-have naming them), each marked covered by a story / a CV line / nothing
   config.ts   ~/.callback/config.json (0600): apiKey, candidateProfile, profileSource
   models.ts   role → model (orchestrator opus-5-5, writer sonnet-5-5, extractor haiku-5-5)
 src/tui/      Ink terminal UI (talks to the server over HTTP + SSE parsed from fetch — Node has no EventSource)
@@ -169,8 +172,11 @@ module (mock interviews, scoring, weakness memory, drills, prep packs), PDF/DOCX
 per-job resume + cover letter, per-job interview traceability, npm packaging (`callback-agent`), house-format
 export + suggestions, gap filler, experience bank (imports, quick add, story-backed drafts, plugin tools).
 
-Experience bank, round two: coverage across tracked jobs ("3 of your 5 targets ask for X — no story yet") and
-project suggestions; live-driver structuring of quick-add text; drafts that pick stories per role archetype.
+Experience bank, round two (done): coverage across tracked jobs ("3 of your 5 targets ask for X — no story yet",
+`GET /api/experience/coverage`, `experience_coverage` tool, Add-a-story prefill), live-driver structuring of quick-add
+text (untested against a real key), name/contact from gap answers into drafts and `profile_get`, inline PDF preview
+(`download?format=pdf&preview=1`, allowed with gaps, never saved). Still open: project suggestions per coverage gap
+(hook into `resources.ts` once both land), drafts that pick stories per role archetype.
 
 Next, in rough order:
 1. **Live-key test** of the `claude` driver end to end (tailor → ATS loop → cover letter → interview → retro),

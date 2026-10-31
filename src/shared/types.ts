@@ -231,6 +231,22 @@ export interface ImportResult {
   note?: string;
 }
 
+/** One thing the tracked jobs ask for, grouped across jobs, and whether the bank or the CV already answers it. */
+export interface Coverage {
+  key: string;
+  /** The ask as a posting phrased it, trimmed: "Terraform experience". */
+  label: string;
+  terms: string[];
+  asks: { applicationId: string; company: string; role: string }[];
+  /** Tracked jobs (not rejected) with an analysis. */
+  total: number;
+  covered: 'story' | 'profile' | null;
+  /** The confirmed story that covers it. */
+  by: { id: string; title: string } | null;
+  /** The CV line that covers it when no story does. */
+  evidence: string | null;
+}
+
 // ─── Outcomes (what feeds the loop) ─────────────────────────────────────────
 
 export type OutcomeStage =

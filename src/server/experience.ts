@@ -5,9 +5,12 @@
 // their LinkedIn data export, their public GitHub, pages they point at.
 
 import { inflateRawSync } from 'node:zlib';
+import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { Experience, ExperienceInput, ExperienceKind, ImportResult } from '@shared/types';
 import { addExperience, findExperienceDuplicate, listExperiences } from './db';
-import { getConfig } from './config';
+import { getConfig, resolveApiKey } from './config';
+import { modelFor } from './models';
+import { WORKSPACE_DIR } from './paths';
 import { isBulletLine, isHeadingLine, isRoleLine, parseHeader, reflow } from './cvtext';
 import { splitEntry } from './resume';
 import { htmlToText, isPrivateHost, normalizeText, postingGuard, robotsAllows, UA } from './guard';
@@ -419,4 +422,58 @@ export function structureStory(text: string): { draft: ExperienceInput; type: st
       source: 'quick',
     },
   };
+}
+
+// ─── Quick add, live: a model does the sorting — still only in their words ──
+// Used when an API key is set (never in demo mode); the heuristic above is the
+// offline path and the fallback. Honesty by construction: a structured story
+// that contains a number the person didn't type is thrown away.
+
+export async function structureStoryLive(text: string): Promise<{ draft: ExperienceInput; type: string } | null> {
+  const apiKey = resolveApiKey();
+  if (!apiKey) return null;
+  const clean = normalizeText(text).text.trim();
+  const prompt = `Structure what a job candidate typed about something they did into a story for their experience bank.
+Return ONLY a JSON object: {"type": one of ${TYPES.map(([k]) => `"${k}"`).join(' | ')} | "other", "title": "a short headline in their words, no final period", "situation": "what was going on, or null", "action": "what THEY did", "result": "what changed, with their number, or null", "tags": ["lowercase tools and themes, at most 6"]}
+Rules: use only their words and facts. Never add a number, tool, title, scale or outcome they did not state. Keep "I" where they said I. A field the text doesn't cover is null.
+
+TEXT:
+${clean}`;
+  try {
+    let out = '';
+    const options: any = {
+      model: modelFor('extractor'),
+      settingSources: [],
+      cwd: WORKSPACE_DIR,
+      env: { ...process.env, ANTHROPIC_API_KEY: apiKey },
+      maxTurns: 1,
+      allowedTools: [],
+      permissionMode: 'default',
+    };
+    for await (const msg of query({ prompt, options }) as any) {
+      if (msg?.type === 'result' && typeof msg.result === 'string') out = msg.result;
+    }
+    const json = out.match(/\{[\s\S]*\}/)?.[0];
+    if (!json) return null;
+    const r = JSON.parse(json);
+    const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+    const title = str(r.title);
+    if (!title) return null;
+    const nums = (s: string) => s.match(/\d+(?:[.,]\d+)?/g) ?? [];
+    const typed = new Set(nums(clean));
+    const fields = [title, str(r.situation), str(r.action), str(r.result)].filter((x): x is string => !!x);
+    if (fields.some((f) => nums(f).some((n) => !typed.has(n)))) return null; // a number they never said
+    const tags = (Array.isArray(r.tags) ? (r.tags as unknown[]) : [])
+      .filter((t): t is string => typeof t === 'string')
+      .map((t) => t.toLowerCase().trim())
+      .filter(Boolean)
+      .slice(0, 6);
+    return {
+      type: TYPES.some(([k]) => k === r.type) ? String(r.type) : 'other',
+      draft: { kind: 'story', title: shorten(title), situation: str(r.situation), action: str(r.action), result: str(r.result), tags, source: 'quick' },
+    };
+  } catch (err) {
+    console.error('[experience] live structuring failed — using the heuristic:', err);
+    return null;
+  }
 }

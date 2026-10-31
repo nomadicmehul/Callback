@@ -465,10 +465,14 @@ function bankAsResumeBody(bank: Experience[]): string {
 }
 
 function buildResumeDraft(app: Application, analysis: JdAnalysis, lessons: MemoryNote[], cv: string, bank: Experience[] = []): string {
-  // The header keeps the person's own lines and order; only the body gets un-wrapped.
+  // The header keeps the person's own lines and order; only the body gets un-wrapped. When the CV has no
+  // name or contact line, the ones they typed into an earlier draft's gaps are theirs to reuse.
   const header = parseHeader(cv);
   const profile = reflow(cv.split(/\r?\n/).slice(header.lines).join('\n'));
-  const { name, contact, headline } = header;
+  const standing = standingAnswers();
+  const name = header.name ?? standing.name;
+  const contact = header.contact ?? standing.contact;
+  const { headline } = header;
   const prof = profile.toLowerCase();
   const own = `${app.company} ${app.role}`.toLowerCase();
   const kws = analysis.keywords.filter((k) => !own.includes(k));
@@ -550,7 +554,9 @@ function guessCity(contact: string | null): string | null {
 function buildCoverLetterDraft(app: Application, analysis: JdAnalysis, cv: string, bank: Experience[] = []): string {
   const header = parseHeader(cv);
   const profile = reflow(cv.split(/\r?\n/).slice(header.lines).join('\n'));
-  const { name, contact } = header;
+  const standing = standingAnswers(); // what they typed into earlier drafts — standing facts, reused as is
+  const name = header.name ?? standing.name;
+  const contact = header.contact ?? standing.contact;
   const city = guessCity(contact);
   const must = analysis.mustHaves.filter((m) => !m.startsWith('('));
   const resp = analysis.responsibilities[0] ?? null;
@@ -581,8 +587,13 @@ function buildCoverLetterDraft(app: Application, analysis: JdAnalysis, cv: strin
     : ['[fill in: one or two short paragraphs tying your real experience to what this role needs most]'];
   const gap = must.slice(2).find((m) => !storyFor(bank, m) && !evidenceFor(profile, m));
 
-  const { availability } = standingAnswers(); // what they told an earlier letter — a standing fact, reused as is
-  return `> ✉️ **Honest draft, written for ${app.company} only.** Grounded in your profile and this posting — never reuse it with the company name swapped. Fill every gap with real details and make it sound like you; recruiters spot boilerplate instantly. Notes like this never appear in the PDF/DOCX.${availability ? '\n> Where you’re based and when you can start come from your last letter — update them if they’ve changed.' : ''}
+  const { availability } = standing;
+  const reused = [
+    availability ? 'where you’re based and when you can start' : '',
+    !header.name && standing.name ? 'your name' : '',
+    !header.contact && standing.contact ? 'your contact line' : '',
+  ].filter(Boolean);
+  return `> ✉️ **Honest draft, written for ${app.company} only.** Grounded in your profile and this posting — never reuse it with the company name swapped. Fill every gap with real details and make it sound like you; recruiters spot boilerplate instantly. Notes like this never appear in the PDF/DOCX.${reused.length ? `\n> From your earlier drafts: ${reused.join(', ')} — update them if they’ve changed.` : ''}
 
 # ${name ?? '[fill in: your name]'}
 ${contact ?? '[fill in: City, Country | phone | email | linkedin.com/in/…]'}

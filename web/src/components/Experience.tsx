@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import type { Experience, ExperienceInput, ExperienceKind, ImportResult } from '@shared/types';
+import { useEffect, useRef, useState } from 'react';
+import type { Coverage, Experience, ExperienceInput, ExperienceKind, ImportResult } from '@shared/types';
 import { STORY_TIPS, STORY_TYPES } from '@shared/stories';
 import { api } from '../lib/api';
 
@@ -239,10 +239,81 @@ function Entry({ e, onEdit, onStatus }: { e: Experience; onEdit: (confirm?: bool
   );
 }
 
+// ─── Coverage: what your tracked jobs ask for, against what's here ─────────
+
+function CoverageRow({ c, onStory }: { c: Coverage; onStory: (c: Coverage) => void }) {
+  return (
+    <div className={`cov ${c.covered ? 'ok' : 'gap'}`}>
+      <span className="cov-mark">{c.covered ? '✓' : '○'}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <b>{c.label}</b>{' '}
+        <span className="scrim-note">
+          · {c.asks.length} of {c.total} target{c.total === 1 ? '' : 's'}: {c.asks.map((a) => a.company).join(', ')}
+        </span>
+        <div className="scrim-note">
+          {c.covered === 'story'
+            ? `Covered by your story “${c.by?.title}”`
+            : c.covered === 'profile'
+              ? c.evidence
+                ? `Your CV says: “${c.evidence.length > 120 ? `${c.evidence.slice(0, 120)}…` : c.evidence}”`
+                : 'A confirmed role or project mentions it'
+              : 'No story yet — one true example with a number covers it for every one of these jobs.'}
+        </div>
+      </div>
+      {!c.covered && (
+        <button className="btn primary sm" onClick={() => onStory(c)}>
+          Add a story
+        </button>
+      )}
+      {c.covered === 'profile' && (
+        <button className="btn sm" onClick={() => onStory(c)} title="Turn the CV line into a full situation → what you did → result story">
+          Make it a story
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CoveragePanel({ items, onStory }: { items: Coverage[]; onStory: (c: Coverage) => void }) {
+  const [showCovered, setShowCovered] = useState(false);
+  if (!items.length) return null;
+  const open = items.filter((c) => !c.covered);
+  const done = items.filter((c) => c.covered);
+  const total = items[0].total;
+  return (
+    <div className="panel exp-coverage">
+      <div className="exp-coverage-head">
+        <b>
+          Across your {total} tracked job{total === 1 ? '' : 's'}
+        </b>
+        <span className="scrim-note">
+          {open.length ? `${open.length} ask${open.length === 1 ? '' : 's'} with no story yet — the ones at the top matter to the most jobs.` : 'Every ask has a story or a CV line behind it.'}
+        </span>
+        {done.length > 0 && (
+          <button className="btn ghost sm" style={{ marginLeft: 'auto' }} onClick={() => setShowCovered((v) => !v)}>
+            {showCovered ? 'Hide' : 'Show'} {done.length} covered
+          </button>
+        )}
+      </div>
+      {open.map((c) => (
+        <CoverageRow key={c.key} c={c} onStory={onStory} />
+      ))}
+      {showCovered && done.map((c) => <CoverageRow key={c.key} c={c} onStory={onStory} />)}
+    </div>
+  );
+}
+
 // ─── The view ───────────────────────────────────────────────────────────────
 
 export function ExperienceView({ experiences, hasProfile, onChanged }: { experiences: Experience[]; hasProfile: boolean; onChanged: () => void }) {
   const [form, setForm] = useState<FormState | null>(null);
+  const [coverage, setCoverage] = useState<Coverage[]>([]);
+  useEffect(() => {
+    api.coverage().then(setCoverage).catch(() => setCoverage([]));
+  }, [experiences]);
+  // Start a story for an ask: its terms as tags, the CV line (if any) as the original to grow from.
+  const storyFor = (c: Coverage) =>
+    setForm({ type: 'other', data: { kind: 'story', title: c.label, tags: c.terms, details: c.evidence ?? null, situation: null, action: null, result: null } });
   const [quick, setQuick] = useState('');
   const [github, setGithub] = useState('');
   const [link, setLink] = useState('');
@@ -303,6 +374,8 @@ export function ExperienceView({ experiences, hasProfile, onChanged }: { experie
         dates and numbers stay the same across every version. Anything imported waits for your OK — Callback never adds a
         detail you didn’t give it.
       </p>
+
+      <CoveragePanel items={coverage} onStory={storyFor} />
 
       {/* Bring in what you already have */}
       <div className="exp-imports">

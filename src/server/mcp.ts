@@ -27,6 +27,7 @@ import { scheduleDrill, completeSession, recordDrillResult, INTERVIEW_MODES } fr
 import { addExperience, getArtifact, listArtifactsOfKind, listExperiences, updateArtifact } from './db';
 import { bankText, groundTruth, importFromCv, importGitHub, importLink } from './experience';
 import { standingAnswers } from './gapsuggest';
+import { coverageText, experienceCoverage } from './coverage';
 import { parseResumeMarkdown, renderPdf, analyzeAts, summarizeAts, exportArtifact, findPlaceholders } from './resume';
 
 const ok = (text: string) => ({ content: [{ type: 'text' as const, text }] });
@@ -50,12 +51,14 @@ export function jobsearchTools(ctx: RunContext) {
             'NO PROFILE ON FILE. Do not draft from assumptions. Ask the user to add their resume (dashboard: Settings → Profile, or /callback:setup in Claude Code), or call profile_set with text they provide.',
           );
         }
-        const { availability } = standingAnswers();
+        const standing = standingAnswers();
+        const header = [standing.name ? `name "${standing.name}"` : '', standing.contact ? `contact line "${standing.contact}"` : ''].filter(Boolean);
         return ok(
           [
             p ? `Candidate profile (${p.length} chars):\n\n${p}` : 'No resume text on file — the experience bank below is all there is.',
             bank,
-            availability ? `Where they're based and when they can start (their own words, from an earlier letter): "${availability}"` : '',
+            standing.availability ? `Where they're based and when they can start (their own words, from an earlier letter): "${standing.availability}"` : '',
+            header.length ? `Header details they typed into an earlier draft — use them wherever the profile lacks them: ${header.join(', ')}` : '',
           ]
             .filter(Boolean)
             .join('\n\n'),
@@ -261,6 +264,14 @@ export function jobsearchTools(ctx: RunContext) {
           return ok(`Import failed: ${String(err?.message ?? err)}`);
         }
       },
+    ),
+
+    tool(
+      'experience_coverage',
+      'What the candidate\'s tracked jobs ask for, grouped across jobs, and whether a confirmed story or a CV line already covers each ask — "3 of 5 targets ask for Terraform — no story yet". Use it to pick the next story worth adding. The answer is always their real experience; never invent a story to close a gap.',
+      {},
+      async () => ok(coverageText(experienceCoverage())),
+      RO,
     ),
 
     // ── Writes that produce documents ─────────────────────────────────────

@@ -14,7 +14,7 @@ Every resume and cover letter Callback writes is built from the experience bank.
 - **Confirm before saving as fact.** Show the exact entry and save it with `confirmed: true` only after they say it's accurate. Otherwise save it unconfirmed — it waits in the dashboard (Experience) for review.
 
 ## Procedure
-1. Call `experience_list` to see what's already there (don't add duplicates).
+1. Call `experience_list` to see what's already there (don't add duplicates). When they ask what to add next, call `experience_coverage`: it groups what their tracked jobs ask for and marks each ask ✓ covered (a story or a CV line) or ○ no story yet — the top ○ line is the story worth adding, if it's true of them.
 2. If they want an import: `experience_import` with `source: "cv"` (the resume on file), `"github"` (their username) or `"link"` (a page they wrote or built). Imports arrive as proposals; tell them to review them in the dashboard → Experience. A LinkedIn data export (.zip) is uploaded in the dashboard, not here.
 3. For a story, find out which kind it is, then ask only what's missing — one question at a time, short:
    | Kind | Situation | What they did | Result |

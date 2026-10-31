@@ -1437,3 +1437,46 @@ hr.sep {
   flex: 1;
   min-width: 0;
 }
+
+/* ─── Experience coverage across tracked jobs ───────────────────────────── */
+.exp-coverage {
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+.exp-coverage-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.cov {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  font-size: 12.5px;
+  margin-bottom: 6px;
+}
+.cov.gap {
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+}
+.cov.ok {
+  opacity: 0.85;
+}
+.cov-mark {
+  font-size: 14px;
+  width: 16px;
+  text-align: center;
+  color: var(--text-dim);
+}
+.cov.gap .cov-mark {
+  color: var(--warn);
+}
+.cov.ok .cov-mark {
+  color: var(--brand);
+}
