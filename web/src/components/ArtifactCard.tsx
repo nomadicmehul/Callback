@@ -91,6 +91,17 @@ export function ArtifactCard({
       setBusy(false);
     }
   }
+  async function downloadAudit() {
+    setBusy(true);
+    try {
+      await api.downloadAudit(artifact.id);
+      flash('ok', 'Audit saved ✓');
+    } catch (err: any) {
+      flash('err', String(err?.message ?? err));
+    } finally {
+      setBusy(false);
+    }
+  }
   async function download(format: 'pdf' | 'docx') {
     if (gaps.length) {
       // Callback won't export a scaffold — take the human straight to the gaps instead of a dead end.
@@ -135,9 +146,14 @@ export function ArtifactCard({
                 ✎ Edit
               </button>
               {CHECKABLE.has(artifact.kind) && (
-                <button className="btn sm accent" onClick={check} disabled={busy}>
-                  {busy ? 'Checking…' : '🔍 ATS check'}
-                </button>
+                <>
+                  <button className="btn sm accent" onClick={check} disabled={busy} title="Render, read back like a parser, score six weighted categories">
+                    {busy ? 'Checking…' : '🔍 ATS check'}
+                  </button>
+                  <button className="btn sm" onClick={downloadAudit} disabled={busy} title="The full audit as a Markdown file — score, why, and what to do">
+                    ⬇ Audit
+                  </button>
+                </>
               )}
               {EXPORTABLE.has(artifact.kind) && (
                 <>

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import type { RunContext } from './runctx';
-import type { ApplicationStatus, ArtifactKind, JdAnalysis, MemoryKind, OutcomeStage } from '@shared/types';
+import type { ApplicationStatus, Artifact, ArtifactKind, JdAnalysis, MemoryKind, OutcomeStage } from '@shared/types';
 import { getConfig, getDocFormat, setConfig } from './config';
 import { postingGuard } from './guard';
 import { fetchPosting } from './posting';
@@ -27,11 +27,29 @@ import { scheduleDrill, completeSession, recordDrillResult, INTERVIEW_MODES, DIM
 import { addExperience, getArtifact, listArtifactsOfKind, listExperiences, updateArtifact } from './db';
 import { bankText, groundTruth, importFromCv, importGitHub, importLink } from './experience';
 import { standingAnswers } from './gapsuggest';
-import { parseResumeMarkdown, renderPdf, analyzeAts, summarizeAts, exportArtifact, findPlaceholders } from './resume';
+import { parseResumeMarkdown, renderPdf, analyzeAts, summarizeAts, exportArtifact, exportBaseName, findPlaceholders } from './resume';
+import { auditMarkdown } from './audit';
 import { recommendationsText, studyText, type DimResult } from './resources';
+import { FILES_DIR } from './paths';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const ok = (text: string) => ({ content: [{ type: 'text' as const, text }] });
 const RO = { annotations: { readOnlyHint: true } };
+
+/** Render → read back → score, the same way the dashboard does it. */
+async function auditOf(art: Artifact) {
+  const app = getApplication(art.applicationId);
+  const pdf = await renderPdf(parseResumeMarkdown(art.content), { title: art.title, kind: art.kind, style: getDocFormat() });
+  return analyzeAts({
+    pdf,
+    source: art.content,
+    application: app,
+    profile: groundTruth(),
+    kind: art.kind,
+    siblings: listArtifactsOfKind(art.kind, art.id).map((a) => a.content),
+  });
+}
 
 // The agents' ONLY door to the user's data — a deliberate least-privilege
 // boundary (no raw filesystem/DB access). The same tool list powers the
@@ -353,23 +371,32 @@ export function jobsearchTools(ctx: RunContext) {
     // ── Document verification + export ────────────────────────────────────
     tool(
       'artifact_ats_check',
-      'Run the ATS + honesty check on a drafted document: renders it to PDF, reads the text layer back like a parser, and reports parseability, page count, contact info, section headings, posting-keyword coverage, must-haves not evidenced, unfilled placeholders, and numbers that do not appear in the profile. Fix only real gaps — never keyword-stuff.',
+      'Run the audit on a drafted document: renders it to PDF, reads the text layer back like a parser, and scores six weighted categories (Parse, Match, Impact, Brevity, Style, Honesty — letters: Specificity instead of Impact) with a verdict, what stands out, posting-keyword coverage (normalised: k8s = Kubernetes; a skills-list-only mention counts 60%), must-haves not evidenced, unfilled placeholders, and numbers that do not appear in the profile. Fix only real gaps — never keyword-stuff.',
       { artifactId: z.string() },
       async (args) => {
         const art = getArtifact(args.artifactId);
         if (!art) return ok(`No artifact ${args.artifactId}.`);
-        const app = getApplication(art.applicationId);
-        const pdf = await renderPdf(parseResumeMarkdown(art.content), { title: art.title, kind: art.kind, style: getDocFormat() });
-        const report = await analyzeAts({
-          pdf,
-          source: art.content,
-          application: app,
-          profile: groundTruth(),
-          kind: art.kind,
-          siblings: listArtifactsOfKind(art.kind, art.id).map((a) => a.content),
-        });
-        ctx.emit({ type: 'tool_result', tool: 'artifact_ats_check', summary: `ATS score ${report.score}/100` });
+        const report = await auditOf(art);
+        ctx.emit({ type: 'tool_result', tool: 'artifact_ats_check', summary: `Audit score ${report.score}/100` });
         return ok(summarizeAts(report));
+      },
+      RO,
+    ),
+    tool(
+      'artifact_audit',
+      "The full audit report for a drafted document as Markdown — score, verdict, what stands out, every category's strengths and findings, keywords, must-haves, numbers to verify, and how the score works. With save: true it is also written next to the exports as <role-company-kind>-audit.md and the path returned. Show it to the user; never edit a document to chase the score with words that aren't true.",
+      { artifactId: z.string(), save: z.boolean().default(false) },
+      async (args) => {
+        const art = getArtifact(args.artifactId);
+        if (!art) return ok(`No artifact ${args.artifactId}.`);
+        const app = getApplication(art.applicationId);
+        const markdown = auditMarkdown(await auditOf(art), art, app);
+        if (!args.save) return ok(markdown);
+        const dir = path.join(FILES_DIR, 'exports', app?.id ?? 'misc');
+        fs.mkdirSync(dir, { recursive: true });
+        const filePath = path.join(dir, `${exportBaseName(art, app)}-audit.md`);
+        fs.writeFileSync(filePath, markdown);
+        return ok(`Saved to ${filePath}\n\n${markdown}`);
       },
       RO,
     ),

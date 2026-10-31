@@ -56,7 +56,11 @@ src/server/
               studyPlan() (prep-pack topics), recommend() (≤4 next steps after a mock), studyText() (study_resources)
   resume.ts   house-format markdown → PDF (pdfkit) / DOCX (layout roles: name, contact, headline, section,
               `### Title | Company | Dates | City` entries); analyzeAts reads the PDF back like a parser
-              (kind-aware) and adds style/evidence suggestions
+              (kind-aware), adds style/evidence suggestions and hands the signals to the audit
+  audit.ts    the score: matchKeywords() (synonyms k8s = Kubernetes, plural = singular, weighted by the section a term
+              sits in — skills-list-only counts 60%), buildAudit() → six weighted categories (Parse 20 · Match 30 ·
+              Impact 20 · Brevity 10 · Style 10 · Honesty 10; letters swap Impact for Specificity), gates (placeholders
+              cap 40, unreadable text layer 30), verdict, standout; auditMarkdown() = the downloadable report
   posting.ts  URL → company/role/location/type/date (JSON-LD JobPosting → meta → <title> → board URL) + text
   guard.ts    postingGuard, htmlToText, robots/private-host checks
   approvals.ts bridge: canUseTool ↔ dashboard (SSE) — requestApproval() resolves when the human clicks
@@ -174,7 +178,9 @@ per-job resume + cover letter, per-job interview traceability, npm packaging (`c
 export + suggestions, gap filler, experience bank (imports, quick add, story-backed drafts, plugin tools), prep packs
 that list topics to revise (posting vs CV) and ask only about the candidate's own work, a study map (`resources.ts`:
 Arch Blueprint for system design, CloudCaptain for cloud/DevOps) with ≤ 4 next steps when a mock ends
-(`InterviewSession.recommendations`), the `study_resources` tool and `study` skill.
+(`InterviewSession.recommendations`), the `study_resources` tool and `study` skill, the weighted audit (`audit.ts`: six
+categories, normalised keyword matching, `GET /api/artifacts/:id/audit[?download=1]`, `artifact_audit` tool, category
+bars + "⬇ Audit" in the dashboard).
 
 Experience bank, round two: coverage across tracked jobs ("3 of your 5 targets ask for X — no story yet") and
 project suggestions; live-driver structuring of quick-add text; drafts that pick stories per role archetype.

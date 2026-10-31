@@ -146,6 +146,21 @@ export const api = {
   recordGapAnswers: (artifactId: string, answers: { hint: string; answer: string }[]) =>
     post('/api/gap-answers', { artifactId, answers }).then(j<{ saved: number }>),
   atsCheck: (id: string) => post(`/api/artifacts/${id}/ats`).then(j<{ report: AtsReport }>),
+  /** The audit as a .md file — saved next to the exports on the server, downloaded here. */
+  downloadAudit: async (id: string): Promise<void> => {
+    const res = await fetch(`/api/artifacts/${id}/audit?download=1`);
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const blob = await res.blob();
+    const filename = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? 'audit.md';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  },
   /** Downloads via fetch so a 422 (placeholders left) surfaces as a readable error. */
   downloadArtifact: async (id: string, format: 'pdf' | 'docx'): Promise<void> => {
     const res = await fetch(`/api/artifacts/${id}/download?format=${format}`);

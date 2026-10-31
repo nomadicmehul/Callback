@@ -28,6 +28,7 @@ import { groundTruth } from './experience';
 import { ARCH_BLUEPRINT, exerciseFor, learningPath, recommend, studyPlan, type DimResult, type TopicHit } from './resources';
 import { isHeadingLine, isRoleLine } from './cvtext';
 import { STOP } from './resume';
+import { hasMetric } from './audit';
 
 /** Posting words that name nothing to revise — verbs and framing the keyword extractor lets through. */
 const GENERIC = new Set(
@@ -36,14 +37,6 @@ const GENERIC = new Set(
     'required require requirements requirement must solid proven deep hands familiarity understanding skills skill excellent good working least including similar related relevant'
   ).split(' '),
 );
-/** A line with a real figure in it — not a year, a phone number or a date range. */
-const hasMetric = (s: string) =>
-  /\d/.test(
-    s
-      .replace(/\+?\d[\d\s().-]{6,}\d/g, '')
-      .replace(/\b(19|20)\d{2}\b/g, '')
-      .replace(/\b\d{1,2}[./-]\d{1,2}([./-]\d{2,4})?\b/g, ''),
-  );
 const isContactLine = (s: string) => /@|https?:\/\/|linkedin\.com|github\.com|\+?\d[\d\s().-]{7,}\d/.test(s);
 
 export const INTERVIEW_MODES: InterviewMode[] = ['behavioral', 'technical', 'system_design'];

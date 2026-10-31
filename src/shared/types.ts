@@ -339,16 +339,37 @@ export interface DashboardStats {
 
 // ─── Export + ATS verification ──────────────────────────────────────────────
 
-export interface AtsReport {
-  /** 0–100. Deductions for anything a parser or a recruiter would trip on. */
+/** One weighted part of the audit score. Weights sum to 1 across the categories that apply. */
+export interface AuditCategory {
+  key: 'parse' | 'match' | 'impact' | 'brevity' | 'style' | 'honesty' | 'specificity';
+  label: string;
+  /** The question this category answers, e.g. "can a system read it?" */
+  hint: string;
+  /** 0–100 for this category alone. */
   score: number;
+  weight: number;
+  /** What pulled the score down — concrete and checkable. */
+  findings: string[];
+  /** What already works — the signals a skimming recruiter will catch. */
+  strengths: string[];
+}
+
+export interface AtsReport {
+  /** 0–100: the weighted category scores, capped at 40 while placeholders remain and at 30 when the text layer is unreadable. */
+  score: number;
+  /** One line on where the document stands. */
+  verdict: string;
+  categories: AuditCategory[];
+  /** Up to five things that make this document stand out, strongest signals first. */
+  standout: string[];
   parseable: boolean;
   pages: number;
   extractedChars: number;
   placeholders: string[];
   contact: { email: string | null; phone: string | null };
   sections: string[];
-  keywords: { found: string[]; missing: string[]; coverage: number | null };
+  /** Normalised matching (k8s = Kubernetes, plural = singular); `coverage` weights a term by where it sits, `skillsOnly` lists terms that only appear in a skills list. */
+  keywords: { found: string[]; missing: string[]; coverage: number | null; skillsOnly: string[] };
   mustHaves: { addressed: string[]; unaddressed: string[] };
   /** Numbers in the resume that don't appear in the profile — verify they're true. */
   unverifiedClaims: string[];
