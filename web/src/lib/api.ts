@@ -14,7 +14,11 @@ import type {
   RunEvent,
   AnswerScore,
   AtsReport,
+  BackupFile,
   Coverage,
+  ImportReport,
+  ResetReport,
+  ResetScope,
   DocFormat,
   Drill,
   Experience,
@@ -86,6 +90,29 @@ export const api = {
   },
 
   fetchJd: (url: string) => post('/api/jd/fetch', { url }).then(j<FetchedPosting>),
+
+  // Backup, move, start fresh
+  exportBackup: async (includeApiKey: boolean): Promise<void> => {
+    const res = await fetch(`/api/backup${includeApiKey ? '?apiKey=1' : ''}`);
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const blob = await res.blob();
+    const filename = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? 'callback-backup.zip';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  },
+  importBackup: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return fetch('/api/backup/import', { method: 'POST', body: fd }).then(j<ImportReport>);
+  },
+  resetData: (scope: ResetScope) => post('/api/reset', { scope, confirm: scope }).then(j<ResetReport>),
+  listBackups: () => fetch('/api/backups').then(j<BackupFile[]>),
 
   listApplications: () => fetch('/api/applications').then(j<Application[]>),
   getApplication: (id: string) => fetch(`/api/applications/${id}`).then(j<ApplicationDetail>),

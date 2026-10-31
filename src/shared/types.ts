@@ -342,6 +342,54 @@ export interface HealthInfo {
   pluginDir: string | null;
 }
 
+// ─── Backup, restore, start fresh ───────────────────────────────────────────
+
+/** 'jobs' clears applications and everything hanging off them; 'all' is back to first run (the API key stays). */
+export type ResetScope = 'jobs' | 'all';
+
+export interface DataCounts {
+  applications: number;
+  artifacts: number;
+  memoryNotes: number;
+  experiences: number;
+  interviewSessions: number;
+  drills: number;
+  gapAnswers: number;
+  outcomes: number;
+}
+
+/** manifest.json inside a backup .zip. */
+export interface BackupManifest {
+  format: 'callback-backup';
+  formatVersion: number;
+  appVersion: string;
+  exportedAt: string;
+  counts: DataCounts;
+  includesApiKey: boolean;
+  hasProfile: boolean;
+}
+
+export interface ImportReport {
+  manifest: BackupManifest;
+  counts: DataCounts;
+  /** Where what was here went before it was replaced. */
+  safetyBackup: string;
+  /** The archive carried no key, so this machine's stayed. */
+  keptLocalApiKey: boolean;
+}
+
+export interface ResetReport {
+  scope: ResetScope;
+  safetyBackup: string;
+  counts: DataCounts;
+}
+
+export interface BackupFile {
+  file: string;
+  size: number;
+  createdAt: string;
+}
+
 export interface DashboardStats {
   total: number;
   byStatus: Record<ApplicationStatus, number>;

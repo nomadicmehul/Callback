@@ -33,6 +33,8 @@ import type {
   AnswerScore,
   Drill,
   Recommendation,
+  DataCounts,
+  ResetScope,
 } from '@shared/types';
 import { APPLICATION_STATUSES } from '@shared/types';
 
@@ -982,4 +984,57 @@ export function rescheduleDrill(
     id,
   );
   return getDrill(id);
+}
+
+// ─── Backup, restore, start fresh (see backup.ts) ───────────────────────────
+
+/** Close the connection so the database file can be swapped; initDb() reopens it. */
+export function closeDb(): void {
+  try {
+    db?.close();
+  } catch {
+    /* already closed */
+  }
+}
+
+/** A consistent single-file snapshot, even in WAL mode. */
+export function vacuumInto(file: string): void {
+  db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
+}
+
+/** Runs still in flight — a run that never finished (a crash) stops counting after 15 minutes. */
+export function activeRunCount(): number {
+  const since = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  return Number(
+    (db.prepare("SELECT COUNT(*) AS n FROM runs WHERE status IN ('running', 'awaiting_approval') AND created_at > ?").get(since) as any).n,
+  );
+}
+
+export function dataCounts(): DataCounts {
+  const n = (table: string) => Number((db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as any).n);
+  return {
+    applications: n('applications'),
+    artifacts: n('artifacts'),
+    memoryNotes: n('memory_notes'),
+    experiences: n('experiences'),
+    interviewSessions: n('interview_sessions'),
+    drills: n('drills'),
+    gapAnswers: n('gap_answers'),
+    outcomes: n('outcomes'),
+  };
+}
+
+/** Delete the person's jobs and everything hanging off them, or everything. Children first, for the foreign keys. */
+export function clearTables(scope: ResetScope): void {
+  const jobs = ['interview_turns', 'drills', 'interview_sessions', 'approvals', 'run_events', 'runs', 'outcomes', 'artifacts', 'applications'];
+  const all = [...jobs, 'memory_notes', 'experiences', 'gap_answers'];
+  db.exec('BEGIN');
+  try {
+    for (const t of scope === 'all' ? all : jobs) db.exec(`DELETE FROM ${t}`);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  db.exec('VACUUM');
 }

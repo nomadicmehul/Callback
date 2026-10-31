@@ -31,6 +31,7 @@ import { coverageText, experienceCoverage } from './coverage';
 import { parseResumeMarkdown, renderPdf, analyzeAts, summarizeAts, exportArtifact, exportBaseName, findPlaceholders } from './resume';
 import { auditMarkdown } from './audit';
 import { recommendationsText, studyText, type DimResult } from './resources';
+import { BACKUPS_DIR, exportBackup, importBackup } from './backup';
 import { FILES_DIR } from './paths';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -291,6 +292,42 @@ export function jobsearchTools(ctx: RunContext) {
       {},
       async () => ok(coverageText(experienceCoverage())),
       RO,
+    ),
+
+    // ── Backup & move ─────────────────────────────────────────────────────
+    tool(
+      'backup_export',
+      "Write a full backup of the candidate's Callback data — profile, experience bank, memory, every job with its documents and interview history, settings — as one .zip under ~/.callback/backups (or to the path given). Import it on another machine with backup_import or in the dashboard (Settings → Backup). The API key is left out unless includeApiKey is true.",
+      {
+        path: z.string().optional().describe('Where to write the .zip; default ~/.callback/backups/export-<timestamp>.zip'),
+        includeApiKey: z.boolean().default(false),
+      },
+      async (args) => {
+        const { zip, manifest } = exportBackup({ includeApiKey: args.includeApiKey });
+        const file = args.path ? path.resolve(args.path) : path.join(BACKUPS_DIR, `export-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, zip, { mode: 0o600 });
+        const n = manifest.counts;
+        return ok(
+          `Backup written to ${file} — ${n.applications} job(s), ${n.artifacts} document(s), ${n.memoryNotes} memory note(s), ${n.experiences} experience(s), ${n.interviewSessions} interview(s)${manifest.includesApiKey ? ', API key included' : ''}.`,
+        );
+      },
+    ),
+    tool(
+      'backup_import',
+      "Restore a Callback backup .zip from a path on this machine — how you move to a new machine without losing context. Replaces everything here with the backup (what is here now is saved to a safety copy first) and keeps this machine's API key when the backup has none. Confirm with the user before calling.",
+      { path: z.string() },
+      async (args) => {
+        try {
+          const r = importBackup(fs.readFileSync(path.resolve(args.path)));
+          const n = r.counts;
+          return ok(
+            `Imported — ${n.applications} job(s), ${n.artifacts} document(s), ${n.memoryNotes} memory note(s), ${n.experiences} experience(s), ${n.interviewSessions} interview(s). What was here before is at ${r.safetyBackup}.${r.keptLocalApiKey ? " Kept this machine's API key." : ''}`,
+          );
+        } catch (err: any) {
+          return ok(`Import failed: ${String(err?.message ?? err)}`);
+        }
+      },
     ),
 
     // ── Writes that produce documents ─────────────────────────────────────

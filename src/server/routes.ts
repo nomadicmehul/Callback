@@ -9,6 +9,7 @@ import type {
   HealthInfo,
   MemoryStatus,
   OutcomeStage,
+  ResetScope,
 } from '@shared/types';
 import { APP_VERSION } from './version';
 import { DATA_DIR, PLUGIN_DIR } from './paths';
@@ -28,6 +29,7 @@ import { extractProfileText, saveProfileFile } from './profile';
 import { answerDrill, INTERVIEW_MODES } from './interview';
 import { parseResumeMarkdown, renderPdf, analyzeAts, exportArtifact, exportBaseName, findPlaceholders } from './resume';
 import { auditMarkdown } from './audit';
+import { backupFilename, exportBackup, importBackup, listBackups, resetData } from './backup';
 import { FILES_DIR } from './paths';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -513,6 +515,39 @@ export function apiRouter(): Hono {
 
   // ─── Dashboard stats ──────────────────────────────────────────────────────
   api.get('/stats', (c) => c.json(computeStats()));
+
+  // ─── Backup, restore, start fresh ─────────────────────────────────────────
+  api.get('/backup', (c) => {
+    const { zip } = exportBackup({ includeApiKey: c.req.query('apiKey') === '1' });
+    c.header('content-type', 'application/zip');
+    c.header('content-disposition', `attachment; filename="${backupFilename()}"`);
+    return c.body(new Uint8Array(zip));
+  });
+
+  api.get('/backups', (c) => c.json(listBackups()));
+
+  api.post('/backup/import', async (c) => {
+    const file = (await c.req.parseBody()).file;
+    if (!(file instanceof File)) return c.json({ error: 'Upload the backup .zip in the "file" field.' }, 400);
+    if (file.size > 512 * 1024 * 1024) return c.json({ error: 'Backup too large (512 MB max).' }, 400);
+    try {
+      return c.json(importBackup(Buffer.from(await file.arrayBuffer())));
+    } catch (err: any) {
+      return c.json({ error: String(err?.message ?? err) }, 422);
+    }
+  });
+
+  // Destructive, so the client echoes the scope as `confirm` — a stray call can't wipe anything.
+  api.post('/reset', async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const scope: ResetScope = body.scope === 'all' ? 'all' : 'jobs';
+    if (body.confirm !== scope) return c.json({ error: `Confirm by sending { scope: "${scope}", confirm: "${scope}" }.` }, 400);
+    try {
+      return c.json(resetData(scope));
+    } catch (err: any) {
+      return c.json({ error: String(err?.message ?? err) }, 409);
+    }
+  });
 
   return api;
 }

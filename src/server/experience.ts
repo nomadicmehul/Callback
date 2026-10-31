@@ -4,8 +4,8 @@
 // or check relies on it. Sources are the candidate's OWN material: their CV,
 // their LinkedIn data export, their public GitHub, pages they point at.
 
-import { inflateRawSync } from 'node:zlib';
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import { unzipFiles } from './zip';
 import type { Experience, ExperienceInput, ExperienceKind, ImportResult } from '@shared/types';
 import { addExperience, findExperienceDuplicate, listExperiences } from './db';
 import { getConfig, resolveApiKey } from './config';
@@ -145,34 +145,16 @@ export function importFromCv(): ImportResult {
 
 const MAX_FILE = 5 * 1024 * 1024;
 
-/** The named files from a ZIP archive (stored or deflated entries). */
+/** The named files from a ZIP archive as text (stored or deflated entries) — the reader lives in zip.ts. */
 export function unzip(data: Uint8Array, wanted: (name: string) => boolean): Map<string, string> {
-  const buf = Buffer.from(data);
-  let eocd = -1;
-  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 0xffff); i--) {
-    if (buf.readUInt32LE(i) === 0x06054b50) {
-      eocd = i;
-      break;
-    }
+  let files: Map<string, Buffer>;
+  try {
+    files = unzipFiles(data, wanted, MAX_FILE);
+  } catch (err: any) {
+    const msg = String(err?.message ?? err);
+    throw new Error(/not a ZIP/i.test(msg) ? 'That is not a ZIP file. Upload the .zip LinkedIn emailed you.' : msg);
   }
-  if (eocd < 0) throw new Error('That is not a ZIP file. Upload the .zip LinkedIn emailed you.');
-  const files = new Map<string, string>();
-  let p = buf.readUInt32LE(eocd + 16);
-  for (let n = buf.readUInt16LE(eocd + 10); n > 0; n--) {
-    if (buf.readUInt32LE(p) !== 0x02014b50) throw new Error('The ZIP file looks damaged.');
-    const method = buf.readUInt16LE(p + 10);
-    const size = buf.readUInt32LE(p + 20);
-    const nameLen = buf.readUInt16LE(p + 28);
-    const local = buf.readUInt32LE(p + 42);
-    const name = buf.toString('utf8', p + 46, p + 46 + nameLen);
-    p += 46 + nameLen + buf.readUInt16LE(p + 30) + buf.readUInt16LE(p + 32);
-    if (name.endsWith('/') || !wanted(name)) continue;
-    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
-    const raw = buf.subarray(start, start + size);
-    const out = method === 0 ? raw : method === 8 ? inflateRawSync(raw, { maxOutputLength: MAX_FILE }) : null;
-    if (out) files.set(name, out.toString('utf8').replace(/^﻿/, ''));
-  }
-  return files;
+  return new Map([...files].map(([name, buf]) => [name, buf.toString('utf8').replace(/^﻿/, '')]));
 }
 
 /** RFC 4180 CSV → rows (quoted fields, doubled quotes, newlines inside quotes). */

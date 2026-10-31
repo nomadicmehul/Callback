@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { HealthInfo, ProfileSource } from '@shared/types';
 import { ClaudeCodeCard } from './ClaudeCodeCard';
 import { DocFormatPanel } from './DocFormat';
+import { BackupPanel } from './Backup';
 import { api } from '../lib/api';
 
 export function SettingsView({ health, onSaved }: { health: HealthInfo | null; onSaved: () => void }) {
@@ -133,7 +134,11 @@ export function SettingsView({ health, onSaved }: { health: HealthInfo | null; o
         {msg && <span style={{ color: msg.kind === 'ok' ? 'var(--brand)' : 'var(--danger)', fontSize: 13 }}>{msg.text}</span>}
       </div>
 
-      <div className="panel" style={{ padding: 16, marginTop: 24, fontSize: 12.5, color: 'var(--text-dim)' }}>
+      <div style={{ marginTop: 24 }}>
+        <BackupPanel dataDir={health?.dataDir ?? null} onChanged={onSaved} />
+      </div>
+
+      <div className="panel" style={{ padding: 16, fontSize: 12.5, color: 'var(--text-dim)' }}>
         <b style={{ color: 'var(--text)' }}>Local-first & private.</b> Everything lives on your machine
         {health?.dataDir ? (
           <>

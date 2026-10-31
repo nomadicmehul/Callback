@@ -138,7 +138,13 @@ Callback is built on a simple stance: **assist, don't deceive; keep the human in
 - ✅ **Honesty by construction** — it aligns to your *real* skills and never invents experience.
 - ✅ **Sanctioned sources** — it works from job descriptions you provide; it does not run ToS-violating scraping or logged-in automation.
 - ✅ **Prep, not cheat** — interview help builds durable skill and never operates during a live interview.
-- ✅ **Your data, your machine** — see it, export it, delete it. No selling, no training on your data.
+- ✅ **Your data, your machine** — see it, [export it](#backups--moving-to-a-new-machine), delete it. No selling, no training on your data.
+
+## Backups & moving to a new machine
+
+Everything Callback knows lives in one folder (`~/.callback`). **Settings → Backup, move & start fresh** exports it as a single `.zip`: your profile, experience bank, memory, every job with its documents and interview history, and your settings (the API key only if you tick it). On the new machine, install Callback, open Settings, **Import backup**, and carry on with the same context — what was there is saved to a safety copy first, and that machine's API key is kept if the archive has none.
+
+In Claude Code the same two moves are `backup_export` and `backup_import`. **Start fresh** (jobs only, or everything) always writes a full backup to `~/.callback/backups/` before deleting anything, so importing it brings it all back.
 
 ## Roadmap
 
