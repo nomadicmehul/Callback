@@ -71,9 +71,10 @@ export function miniMarkdown(src: string): string {
   return out.join('\n');
 }
 
-/** Bold + code; `[fill in: …]` gaps are highlighted unless they're quoted in an editorial note. */
+/** Links, bold + code; `[fill in: …]` gaps are highlighted unless they're quoted in an editorial note. */
 function inline(s: string, gaps = true): string {
   const out = s
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/`([^`]+)`/g, '<code>$1</code>');
   return gaps ? out.replace(/\[fill in:[^\]]*\]/gi, '<mark class="gap">$&</mark>') : out;

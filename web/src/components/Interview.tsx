@@ -3,6 +3,7 @@ import type { AnswerScore, Application, Drill, InterviewMode, InterviewSession, 
 import { api } from '../lib/api';
 import { statusVar } from '../lib/ui';
 import { Dictate, appendSpoken } from './Dictate';
+import { RecList } from './Recommendations';
 import type { InterviewTarget } from './Drawer';
 
 const MODES: { key: InterviewMode; label: string; blurb: string }[] = [
@@ -312,6 +313,11 @@ export function InterviewView({
                   Proposed weaknesses wait in <b>Memory</b> for your approval — activate them and the next session will target them.
                   {active.session.applicationId && ' This session is saved under its job in the Pipeline.'}
                 </div>
+                {active.session.recommendations?.length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <RecList recs={active.session.recommendations} title="Next steps — from this session's weakest dimensions and the job's stack. For the next round, not the next hour." />
+                  </div>
+                )}
               </div>
             )}
           </div>

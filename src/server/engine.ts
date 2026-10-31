@@ -984,18 +984,30 @@ async function claudePrep(ctx: RunContext, app: Application): Promise<string> {
   const model = modelFor('writer');
   ctx.emit({ type: 'agent', agent: 'interview-coach', model });
   const prompt = `Build an interview prep pack for application ${app.id} (${app.role} @ ${app.company}).
-1. Call profile_get, application_get, and memory_search (query "interview weaknesses", scope "stage:behavioral", then "stage:technical", then "stage:system_design").
-2. Write a markdown pack following the mock-interview skill: the role in one glance, must-haves mapped to the candidate's REAL evidence (placeholders where missing — never invent), likely behavioral questions derived from the actual responsibilities, technical and system-design questions from the real stack, 4–6 STAR stories to have ready from the profile, and the candidate's known weak spots to rehearse. Prep is for BEFORE the interview only.
+1. Call profile_get, application_get, study_resources (with the applicationId), and memory_search (query "interview weaknesses", scope "stage:behavioral", then "stage:technical", then "stage:system_design").
+2. Write a markdown pack following the mock-interview and study skills, in this order:
+   - the role in one glance;
+   - topics to revise: every technology or practice the posting names, split into what the candidate's profile already shows (quote their own line as the example) and what it does not (say so plainly — learn the basics, be upfront if asked). Include the matching links study_resources returned — at most six;
+   - must-haves mapped to the candidate's REAL evidence (placeholders where missing — never invent);
+   - likely questions: behavioral from the posting's actual responsibilities; technical ONLY about things the profile says the candidate did ("explain how you used X at Y — the problem, the alternative you rejected, what you'd do differently"); system design, when the role calls for it, as classic exercises matched to the posting's stack (rate limiter, notification fan-out, key-value store…) with the Arch Blueprint chapter to read first;
+   - 4–6 STAR stories from the profile; known weak spots to rehearse; a short "read before the day" list.
+   Never ask how ${app.company} builds or would solve anything, what they "would do", or anything the candidate cannot answer from their own experience plus the posting. Prep is for BEFORE the interview only.
 3. Call save_draft with kind "interview_prep".`;
   const options: any = {
     model,
     systemPrompt: SYSTEM_PROMPT,
     mcpServers: { jobsearch: buildJobsearchServer(ctx) },
-    allowedTools: ['mcp__jobsearch__profile_get', 'mcp__jobsearch__application_get', 'mcp__jobsearch__memory_search', 'mcp__jobsearch__save_draft'],
+    allowedTools: [
+      'mcp__jobsearch__profile_get',
+      'mcp__jobsearch__application_get',
+      'mcp__jobsearch__study_resources',
+      'mcp__jobsearch__memory_search',
+      'mcp__jobsearch__save_draft',
+    ],
     settingSources: [],
     cwd: WORKSPACE_DIR,
     env: { ...process.env, ANTHROPIC_API_KEY: apiKey },
-    maxTurns: 12,
+    maxTurns: 14,
     permissionMode: 'default',
     canUseTool: async (_tool: string, input: Record<string, unknown>) => ({ behavior: 'allow', updatedInput: input }),
   };

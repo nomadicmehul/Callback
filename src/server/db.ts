@@ -31,6 +31,7 @@ import type {
   InterviewTurn,
   AnswerScore,
   Drill,
+  Recommendation,
 } from '@shared/types';
 import { APPLICATION_STATUSES } from '@shared/types';
 
@@ -202,6 +203,11 @@ function migrate(): void {
   }
   try {
     db.exec('ALTER TABLE applications ADD COLUMN location TEXT');
+  } catch {
+    /* column already exists */
+  }
+  try {
+    db.exec('ALTER TABLE interview_sessions ADD COLUMN recommendations_json TEXT');
   } catch {
     /* column already exists */
   }
@@ -756,6 +762,7 @@ function rowToSession(r: any): InterviewSession {
     summary: r.summary ?? null,
     answered: Number(sc?.n ?? 0),
     avgScore: sc?.avg != null ? Math.round(Number(sc.avg) * 10) / 10 : null,
+    recommendations: r.recommendations_json ? (JSON.parse(r.recommendations_json) as Recommendation[]) : [],
     startedAt: r.started_at,
     finishedAt: r.finished_at ?? null,
   };
@@ -818,8 +825,13 @@ export function listDrillsByApplication(applicationId: string): Drill[] {
     .map(rowToDrill);
 }
 
-export function finishInterviewSession(id: string, summary: string): void {
-  db.prepare("UPDATE interview_sessions SET status = 'done', summary = ?, finished_at = ? WHERE id = ?").run(summary, now(), id);
+export function finishInterviewSession(id: string, summary: string, recommendations: Recommendation[] = []): void {
+  db.prepare("UPDATE interview_sessions SET status = 'done', summary = ?, recommendations_json = ?, finished_at = ? WHERE id = ?").run(
+    summary,
+    JSON.stringify(recommendations),
+    now(),
+    id,
+  );
 }
 
 export function addInterviewTurn(input: { sessionId: string; question: string; dimension: string }): InterviewTurn {

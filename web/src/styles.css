@@ -1399,3 +1399,36 @@ hr.sep {
   flex: 1;
   min-width: 0;
 }
+
+/* ─── Next steps after a mock interview (read / build / practise) ────────── */
+.recs-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rec {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  font-size: 12.5px;
+}
+.rec-kind {
+  font-size: 15px;
+  line-height: 1.2;
+}
+.rec-detail {
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.rec-link {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 12px;
+}

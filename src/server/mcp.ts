@@ -23,10 +23,11 @@ import {
   scoreInterviewTurn,
   listDueDrills,
 } from './db';
-import { scheduleDrill, completeSession, recordDrillResult, INTERVIEW_MODES } from './interview';
+import { scheduleDrill, completeSession, recordDrillResult, INTERVIEW_MODES, DIMENSIONS } from './interview';
 import { addExperience, getArtifact, listArtifactsOfKind, listExperiences, updateArtifact } from './db';
 import { bankText, groundTruth, importFromCv, importGitHub, importLink } from './experience';
 import { parseResumeMarkdown, renderPdf, analyzeAts, summarizeAts, exportArtifact, findPlaceholders } from './resume';
+import { recommendationsText, studyText, type DimResult } from './resources';
 
 const ok = (text: string) => ({ content: [{ type: 'text' as const, text }] });
 const RO = { annotations: { readOnlyHint: true } };
@@ -455,9 +456,33 @@ export function jobsearchTools(ctx: RunContext) {
     ),
     tool(
       'interview_finish',
-      'Finish a mock-interview session: derives recurring weaknesses (proposed to memory for the user to approve) and writes a summary.',
+      'Finish a mock-interview session: derives recurring weaknesses (proposed to memory for the user to approve), writes a summary, and returns up to four next steps (read / build / practise) from the weakest dimensions and the job\'s stack — present them to the candidate.',
       { sessionId: z.string() },
-      async (args) => ok(completeSession(args.sessionId, ctx)),
+      async (args) => {
+        const summary = completeSession(args.sessionId, ctx);
+        const recs = getInterviewSession(args.sessionId)?.recommendations ?? [];
+        return ok([summary, recommendationsText(recs)].filter(Boolean).join('\n\n'));
+      },
+    ),
+    tool(
+      'study_resources',
+      "What to read and one thing to build, matched to a posting and/or a mock-interview result. System design → Arch Blueprint chapters; cloud, DevOps, platform engineering, SRE → CloudCaptain pages. Pass applicationId for the posting's topics (✓ shown in the profile / ○ not yet) and the learning track for the level; add mode + weakDimensions after an interview for next steps; or pass free-text topics when there is no tracked job. Short by design — a few links and one project, never a catalogue.",
+      {
+        applicationId: z.string().optional(),
+        mode: z.enum(['behavioral', 'technical', 'system_design']).optional(),
+        weakDimensions: z.array(z.string()).optional().describe('Rubric keys that scored low, weakest first — e.g. ["estimation", "tradeoffs"]'),
+        topics: z.string().optional().describe('Technologies or topics in free text, when there is no tracked application'),
+      },
+      async (args) => {
+        const app = args.applicationId ? getApplication(args.applicationId) : null;
+        // No real averages here — the agent names the weak keys; recommendations stay honest and print no number.
+        const dims: DimResult[] = (args.weakDimensions ?? []).flatMap((k) => {
+          const spec = args.mode ? DIMENSIONS[args.mode].find((d) => d.key === k) : null;
+          return spec ? [{ key: spec.key, label: spec.label, avg: null, fix: spec.fix }] : [];
+        });
+        return ok(studyText({ app, profile: groundTruth(), topics: args.topics, dims, mode: args.mode }));
+      },
+      RO,
     ),
     tool(
       'drills_due',

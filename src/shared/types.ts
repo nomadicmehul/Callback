@@ -336,6 +336,16 @@ export interface AtsReport {
 
 export type InterviewMode = 'behavioral' | 'technical' | 'system_design';
 
+/** One next step after a mock interview: something to read, build or practise — with the source when it's a link. */
+export interface Recommendation {
+  kind: 'read' | 'build' | 'practice';
+  title: string;
+  detail: string;
+  url: string | null;
+  /** "Arch Blueprint", "CloudCaptain" — null for a habit with no link. */
+  source: string | null;
+}
+
 export interface InterviewSession {
   id: string;
   /** The pipeline job this session prepares for (null = general practice). */
@@ -349,6 +359,8 @@ export interface InterviewSession {
   /** Answers scored so far, and their average overall — for history and the job drawer. */
   answered: number;
   avgScore: number | null;
+  /** Written when the session finished: what to read, build and practise next (at most four). */
+  recommendations: Recommendation[];
   startedAt: string;
   finishedAt: string | null;
 }

@@ -126,7 +126,7 @@ Three ways in, one shared memory. The agents' *only* door to your data is a smal
 Callback's methodology ships as open [Agent Skills](https://agentskills.io) under [`skills/`](skills/):
 
 - **Workflows you invoke:** `setup` (profile first), `apply` (capture → analyze → tailor → approve), `outcome` (log + retro)
-- **Methodology they follow:** `jd-analyzer`, `resume-tailor`, `cover-letter`, `mock-interview`, `retro`
+- **Methodology they follow:** `jd-analyzer`, `resume-tailor`, `cover-letter`, `mock-interview`, `study` (what to read and build next — system design via [Arch Blueprint](https://nomadicmehul.dev/arch-blueprint/), cloud/DevOps via [CloudCaptain](https://cloudcaptain.io)), `retro`
 
 They power Callback's own agents **and** load straight into Claude Code as the plugin's skills. Honesty rules are baked into each one.
 
