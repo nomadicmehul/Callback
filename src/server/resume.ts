@@ -27,7 +27,7 @@ export interface Block {
   spaced: boolean;
 }
 
-const STOP = new Set(
+export const STOP = new Set(
   (
     'the a an and or of to in for with on at by from as is are be we you your our their this that will who what which role team work years experience including etc ' +
     'required strong must have has hiring hire need needs requirements skills skill ability able plus nice preferred looking join about across within using also well ' +
@@ -43,7 +43,8 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 // ─── Markdown → blocks ──────────────────────────────────────────────────────
 
 function parseRuns(line: string): Run[] {
-  const clean = line.replace(/`([^`]+)`/g, '$1');
+  // Code marks go; a markdown link becomes "text (url)" so a printed prep pack still shows where to go.
+  const clean = line.replace(/`([^`]+)`/g, '$1').replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '$1 ($2)');
   const runs: Run[] = [];
   const re = /\*\*([^*]+)\*\*/g;
   let last = 0;

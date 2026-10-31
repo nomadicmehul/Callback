@@ -30,6 +30,7 @@ Make the candidate measurably better at interviewing — the opposite of a real-
 3. Generate questions from the candidate's **actual** resume + the JD, including the variations/follow-ups that expose memorization.
 4. After each answer: a score on the real signals, then one concrete "here's what to change", then verify it on the next (spaced) rep.
 5. Call `memory_propose` with `kind: "weakness"` for recurring mistakes and `kind: "win"` for what's working, scoped (e.g. `stage:behavioral`, `company:Acme`).
+6. Close with next steps, not a lecture: `interview_finish` returns up to four (read / build / practise) built from the weakest dimensions and the job's stack — system design points at Arch Blueprint, cloud and DevOps at CloudCaptain. Present them as they are, or call `study_resources` for the posting's full topic list (see the `study` skill). One project to build beats ten links.
 
 ## In Callback (tools)
 - **In the app (live mode):** drive the session with `interview_ask` (exactly one question per turn, tagged with the rubric dimension it targets) and `interview_score` (1–5 per dimension, an overall, ONE concrete fix). The dashboard shows each question, the candidate answers there, and weak answers (≤ 3.5) are scheduled as spaced-repetition drills automatically.
