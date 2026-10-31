@@ -26,7 +26,11 @@ import { postingGuard } from './guard';
 import { fetchPosting } from './posting';
 import { extractProfileText, saveProfileFile } from './profile';
 import { answerDrill, INTERVIEW_MODES } from './interview';
-import { parseResumeMarkdown, renderPdf, analyzeAts, exportArtifact, findPlaceholders } from './resume';
+import { parseResumeMarkdown, renderPdf, analyzeAts, exportArtifact, exportBaseName, findPlaceholders } from './resume';
+import { auditMarkdown } from './audit';
+import { FILES_DIR } from './paths';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   listApplications,
   getApplication,
@@ -398,6 +402,32 @@ export function apiRouter(): Hono {
     const company = getApplication(art.applicationId)?.company ?? null;
     const saved = addGapAnswers(answers.map((a: { hint: string; answer: string }) => ({ ...a, kind: gapKind(a.hint), company, artifactKind: art.kind })));
     return c.json({ saved });
+  });
+
+  // The audit report: the score, why, and what to do — as JSON + Markdown, or a downloadable .md file
+  // saved next to the exports. Works on scaffolds too (the score is capped, the report says so).
+  api.get('/artifacts/:id/audit', async (c) => {
+    const art = getArtifact(c.req.param('id'));
+    if (!art) return c.json({ error: 'not found' }, 404);
+    const app = getApplication(art.applicationId);
+    const pdf = await renderPdf(parseResumeMarkdown(art.content), { title: art.title, kind: art.kind, style: getDocFormat() });
+    const report = await analyzeAts({
+      pdf,
+      source: art.content,
+      application: app,
+      profile: groundTruth(),
+      kind: art.kind,
+      siblings: listArtifactsOfKind(art.kind, art.id).map((a) => a.content),
+    });
+    const markdown = auditMarkdown(report, art, app);
+    if (c.req.query('download') !== '1') return c.json({ report, markdown });
+    const filename = `${exportBaseName(art, app)}-audit.md`;
+    const dir = path.join(FILES_DIR, 'exports', app?.id ?? 'misc');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, filename), markdown);
+    c.header('content-type', 'text/markdown; charset=utf-8');
+    c.header('content-disposition', `attachment; filename="${filename}"`);
+    return c.body(markdown);
   });
 
   api.get('/artifacts/:id/download', async (c) => {

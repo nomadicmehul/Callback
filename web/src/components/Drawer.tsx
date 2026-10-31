@@ -5,6 +5,7 @@ import { ALL_STATUSES, statusVar } from '../lib/ui';
 import { ActivityFeed } from './Activity';
 import { ArtifactCard } from './ArtifactCard';
 import { MaterialsRow } from './Materials';
+import { RecList } from './Recommendations';
 
 const OUTCOME_STAGES: OutcomeStage[] = ['applied', 'screen', 'interview', 'offer', 'rejected', 'ghosted'];
 const MODE_LABEL: Record<InterviewMode, string> = { behavioral: 'Behavioral', technical: 'Technical', system_design: 'System design' };
@@ -284,6 +285,14 @@ export function ApplicationDrawer({
                 )}
               </div>
             )}
+            {(() => {
+              const last = detail.interviews.find((s) => s.status === 'done' && s.recommendations?.length);
+              return last ? (
+                <div style={{ marginTop: 10 }}>
+                  <RecList recs={last.recommendations.slice(0, 3)} title={`Next steps from your last ${MODE_LABEL[last.mode].toLowerCase()} mock`} />
+                </div>
+              ) : null;
+            })()}
           </section>
 
           {/* Outcome logger — feeds the learning loop */}

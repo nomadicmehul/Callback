@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import type { RunContext } from './runctx';
-import type { ApplicationStatus, ArtifactKind, JdAnalysis, MemoryKind, OutcomeStage } from '@shared/types';
+import type { ApplicationStatus, Artifact, ArtifactKind, JdAnalysis, MemoryKind, OutcomeStage } from '@shared/types';
 import { getConfig, getDocFormat, setConfig } from './config';
 import { postingGuard } from './guard';
 import { fetchPosting } from './posting';
@@ -23,15 +23,34 @@ import {
   scoreInterviewTurn,
   listDueDrills,
 } from './db';
-import { scheduleDrill, completeSession, recordDrillResult, INTERVIEW_MODES } from './interview';
+import { scheduleDrill, completeSession, recordDrillResult, INTERVIEW_MODES, DIMENSIONS } from './interview';
 import { addExperience, getArtifact, listArtifactsOfKind, listExperiences, updateArtifact } from './db';
 import { bankText, groundTruth, importFromCv, importGitHub, importLink } from './experience';
 import { standingAnswers } from './gapsuggest';
 import { coverageText, experienceCoverage } from './coverage';
-import { parseResumeMarkdown, renderPdf, analyzeAts, summarizeAts, exportArtifact, findPlaceholders } from './resume';
+import { parseResumeMarkdown, renderPdf, analyzeAts, summarizeAts, exportArtifact, exportBaseName, findPlaceholders } from './resume';
+import { auditMarkdown } from './audit';
+import { recommendationsText, studyText, type DimResult } from './resources';
+import { FILES_DIR } from './paths';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const ok = (text: string) => ({ content: [{ type: 'text' as const, text }] });
 const RO = { annotations: { readOnlyHint: true } };
+
+/** Render → read back → score, the same way the dashboard does it. */
+async function auditOf(art: Artifact) {
+  const app = getApplication(art.applicationId);
+  const pdf = await renderPdf(parseResumeMarkdown(art.content), { title: art.title, kind: art.kind, style: getDocFormat() });
+  return analyzeAts({
+    pdf,
+    source: art.content,
+    application: app,
+    profile: groundTruth(),
+    kind: art.kind,
+    siblings: listArtifactsOfKind(art.kind, art.id).map((a) => a.content),
+  });
+}
 
 // The agents' ONLY door to the user's data — a deliberate least-privilege
 // boundary (no raw filesystem/DB access). The same tool list powers the
@@ -363,23 +382,32 @@ export function jobsearchTools(ctx: RunContext) {
     // ── Document verification + export ────────────────────────────────────
     tool(
       'artifact_ats_check',
-      'Run the ATS + honesty check on a drafted document: renders it to PDF, reads the text layer back like a parser, and reports parseability, page count, contact info, section headings, posting-keyword coverage, must-haves not evidenced, unfilled placeholders, and numbers that do not appear in the profile. Fix only real gaps — never keyword-stuff.',
+      'Run the audit on a drafted document: renders it to PDF, reads the text layer back like a parser, and scores six weighted categories (Parse, Match, Impact, Brevity, Style, Honesty — letters: Specificity instead of Impact) with a verdict, what stands out, posting-keyword coverage (normalised: k8s = Kubernetes; a skills-list-only mention counts 60%), must-haves not evidenced, unfilled placeholders, and numbers that do not appear in the profile. Fix only real gaps — never keyword-stuff.',
       { artifactId: z.string() },
       async (args) => {
         const art = getArtifact(args.artifactId);
         if (!art) return ok(`No artifact ${args.artifactId}.`);
-        const app = getApplication(art.applicationId);
-        const pdf = await renderPdf(parseResumeMarkdown(art.content), { title: art.title, kind: art.kind, style: getDocFormat() });
-        const report = await analyzeAts({
-          pdf,
-          source: art.content,
-          application: app,
-          profile: groundTruth(),
-          kind: art.kind,
-          siblings: listArtifactsOfKind(art.kind, art.id).map((a) => a.content),
-        });
-        ctx.emit({ type: 'tool_result', tool: 'artifact_ats_check', summary: `ATS score ${report.score}/100` });
+        const report = await auditOf(art);
+        ctx.emit({ type: 'tool_result', tool: 'artifact_ats_check', summary: `Audit score ${report.score}/100` });
         return ok(summarizeAts(report));
+      },
+      RO,
+    ),
+    tool(
+      'artifact_audit',
+      "The full audit report for a drafted document as Markdown — score, verdict, what stands out, every category's strengths and findings, keywords, must-haves, numbers to verify, and how the score works. With save: true it is also written next to the exports as <role-company-kind>-audit.md and the path returned. Show it to the user; never edit a document to chase the score with words that aren't true.",
+      { artifactId: z.string(), save: z.boolean().default(false) },
+      async (args) => {
+        const art = getArtifact(args.artifactId);
+        if (!art) return ok(`No artifact ${args.artifactId}.`);
+        const app = getApplication(art.applicationId);
+        const markdown = auditMarkdown(await auditOf(art), art, app);
+        if (!args.save) return ok(markdown);
+        const dir = path.join(FILES_DIR, 'exports', app?.id ?? 'misc');
+        fs.mkdirSync(dir, { recursive: true });
+        const filePath = path.join(dir, `${exportBaseName(art, app)}-audit.md`);
+        fs.writeFileSync(filePath, markdown);
+        return ok(`Saved to ${filePath}\n\n${markdown}`);
       },
       RO,
     ),
@@ -476,9 +504,33 @@ export function jobsearchTools(ctx: RunContext) {
     ),
     tool(
       'interview_finish',
-      'Finish a mock-interview session: derives recurring weaknesses (proposed to memory for the user to approve) and writes a summary.',
+      'Finish a mock-interview session: derives recurring weaknesses (proposed to memory for the user to approve), writes a summary, and returns up to four next steps (read / build / practise) from the weakest dimensions and the job\'s stack — present them to the candidate.',
       { sessionId: z.string() },
-      async (args) => ok(completeSession(args.sessionId, ctx)),
+      async (args) => {
+        const summary = completeSession(args.sessionId, ctx);
+        const recs = getInterviewSession(args.sessionId)?.recommendations ?? [];
+        return ok([summary, recommendationsText(recs)].filter(Boolean).join('\n\n'));
+      },
+    ),
+    tool(
+      'study_resources',
+      "What to read and one thing to build, matched to a posting and/or a mock-interview result. System design → Arch Blueprint chapters; cloud, DevOps, platform engineering, SRE → CloudCaptain pages. Pass applicationId for the posting's topics (✓ shown in the profile / ○ not yet) and the learning track for the level; add mode + weakDimensions after an interview for next steps; or pass free-text topics when there is no tracked job. Short by design — a few links and one project, never a catalogue.",
+      {
+        applicationId: z.string().optional(),
+        mode: z.enum(['behavioral', 'technical', 'system_design']).optional(),
+        weakDimensions: z.array(z.string()).optional().describe('Rubric keys that scored low, weakest first — e.g. ["estimation", "tradeoffs"]'),
+        topics: z.string().optional().describe('Technologies or topics in free text, when there is no tracked application'),
+      },
+      async (args) => {
+        const app = args.applicationId ? getApplication(args.applicationId) : null;
+        // No real averages here — the agent names the weak keys; recommendations stay honest and print no number.
+        const dims: DimResult[] = (args.weakDimensions ?? []).flatMap((k) => {
+          const spec = args.mode ? DIMENSIONS[args.mode].find((d) => d.key === k) : null;
+          return spec ? [{ key: spec.key, label: spec.label, avg: null, fix: spec.fix }] : [];
+        });
+        return ok(studyText({ app, profile: groundTruth(), topics: args.topics, dims, mode: args.mode }));
+      },
+      RO,
     ),
     tool(
       'drills_due',

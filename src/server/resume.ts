@@ -13,6 +13,7 @@ import { DEFAULT_DOC_FORMAT, type DocFormat } from '@shared/types';
 import { getDocFormat } from './config';
 import { findFontFiles } from './fonts';
 import { FILES_DIR } from './paths';
+import { BRIDGE, FILLER, SPELLING, WEAK_OPENER, buildAudit, matchKeywords } from './audit';
 
 export interface Run {
   text: string;
@@ -26,10 +27,11 @@ export interface Block {
   spaced: boolean;
 }
 
-const STOP = new Set(
+export const STOP = new Set(
   (
     'the a an and or of to in for with on at by from as is are be we you your our their this that will who what which role team work years experience including etc ' +
-    'required strong must have has hiring hire need needs requirements skills skill ability able plus nice preferred looking join about across within using also well'
+    'required strong must have has hiring hire need needs requirements skills skill ability able plus nice preferred looking join about across within using also well ' +
+    'responsibilities responsibility qualifications benefits remote hybrid onsite on-site location salary apply build design own deliver drive'
   ).split(/\s+/),
 );
 
@@ -41,7 +43,8 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 // ─── Markdown → blocks ──────────────────────────────────────────────────────
 
 function parseRuns(line: string): Run[] {
-  const clean = line.replace(/`([^`]+)`/g, '$1');
+  // Code marks go; a markdown link becomes "text (url)" so a printed prep pack still shows where to go.
+  const clean = line.replace(/`([^`]+)`/g, '$1').replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '$1 ($2)');
   const runs: Run[] = [];
   const re = /\*\*([^*]+)\*\*/g;
   let last = 0;
@@ -442,8 +445,7 @@ export async function exportArtifact(
   format: 'pdf' | 'docx',
 ): Promise<{ buffer: Buffer; filename: string; filePath: string }> {
   const blocks = parseResumeMarkdown(art.content);
-  const base = slug([app?.role, app?.company, art.kind.replace('_', '-')].filter(Boolean).join('-')) || art.kind;
-  const filename = `${base}.${format}`;
+  const filename = `${exportBaseName(art, app)}.${format}`;
   const opts = { title: art.title, kind: art.kind, style: getDocFormat() };
   const buffer = format === 'pdf' ? await renderPdf(blocks, opts) : await renderDocx(blocks, opts);
   const dir = path.join(FILES_DIR, 'exports', app?.id ?? 'misc');
@@ -452,6 +454,10 @@ export async function exportArtifact(
   fs.writeFileSync(filePath, buffer);
   return { buffer, filename, filePath };
 }
+
+/** "senior-platform-engineer-northwind-cloud-resume" — shared by exports and the audit file. */
+export const exportBaseName = (art: Artifact, app: Application | null) =>
+  slug([app?.role, app?.company, art.kind.replace('_', '-')].filter(Boolean).join('-')) || art.kind;
 
 // ─── ATS verification: read the PDF back the way a parser would ─────────────
 
@@ -501,16 +507,21 @@ export async function analyzeAts(input: {
     .filter((h) => sectionNames.some((s) => h.toLowerCase().includes(s)));
 
   const an = input.application?.analysis ?? null;
+  // The company's and the role's own words are not skills to match — "northwind" or "senior" prove nothing.
+  const own = `${input.application?.company ?? ''} ${input.application?.role ?? ''}`.toLowerCase();
   const kws = [
     ...new Set(
       (an?.keywords ?? [])
         .map((k) => k.trim().replace(/^[.,;:]+|[.,;:]+$/g, '').toLowerCase())
-        .filter((k) => k.length > 2 && !STOP.has(k) && !/^\d+$/.test(k)),
+        .filter((k) => k.length > 2 && !STOP.has(k) && !/^\d+$/.test(k) && !own.includes(k)),
     ),
   ];
-  const found = kws.filter((k) => tl.includes(k.toLowerCase()));
-  const missing = kws.filter((k) => !found.includes(k));
-  const coverage = kws.length ? found.length / kws.length : null;
+  // Normalised matching (k8s = Kubernetes, plural = singular), weighted by WHERE a term sits: used in the
+  // experience or summary it counts fully; parked in a skills list it counts 60%.
+  const match = matchKeywords(kws, blocks, tl);
+  const found = match.found.map((h) => h.term);
+  const missing = match.missing;
+  const coverage = kws.length ? match.weighted / kws.length : null;
 
   const addressed: string[] = [];
   const unaddressed: string[] = [];
@@ -532,18 +543,11 @@ export async function analyzeAts(input: {
     }
   }
 
+  // Issues are the things to fix first; the score itself comes from the weighted audit below.
   const issues: AtsReport['issues'] = [];
-  let score = 100;
-  if (!parseable) {
-    score -= 40;
-    issues.push({ level: 'block', text: 'The PDF text layer could not be read reliably — an ATS would see little or nothing.' });
-  }
-  if (cid) {
-    score -= 30;
-    issues.push({ level: 'block', text: 'Garbled glyphs ("(cid:…)") in the text layer — parsers will read gibberish.' });
-  }
+  if (!parseable) issues.push({ level: 'block', text: 'The PDF text layer could not be read reliably — an ATS would see little or nothing.' });
+  if (cid) issues.push({ level: 'block', text: 'Garbled glyphs ("(cid:…)") in the text layer — parsers will read gibberish.' });
   if (placeholders.length) {
-    score -= 30;
     issues.push({
       level: 'block',
       text: `${placeholders.length} unfilled placeholder(s) — fill each with a real detail (or drop it) before exporting: ${placeholders.slice(0, 3).join(', ')}${placeholders.length > 3 ? '…' : ''}`,
@@ -551,70 +555,80 @@ export async function analyzeAts(input: {
   }
   const lost = [...new Set(blocks.flatMap((b) => pdfSafe(b.text).lost))];
   if (lost.length) {
-    score -= 5;
     issues.push({
       level: 'warn',
       text: `The PDF font can't draw ${lost.slice(0, 6).map((c) => `"${c}"`).join(' ')} — they're left out of the PDF. Rephrase them, or send the DOCX (Word keeps every character).`,
     });
   }
   if (isLetter ? pages > 1 : pages > 2) {
-    score -= 15;
     issues.push({ level: 'warn', text: isLetter ? `${pages} pages — a cover letter should fit on one.` : `${pages} pages — aim for 1–2.` });
   }
-  if (!email) {
-    score -= 10;
-    issues.push({ level: 'warn', text: 'No email address found in the text layer — put contact details in plain text, not icons or headers.' });
-  }
-  if (!phone && !isLetter) {
-    score -= 5;
-    issues.push({ level: 'info', text: 'No phone number found (fine if intentional).' });
-  }
+  if (!email) issues.push({ level: 'warn', text: 'No email address found in the text layer — put contact details in plain text, not icons or headers.' });
+  if (!phone && !isLetter) issues.push({ level: 'info', text: 'No phone number found (fine if intentional).' });
   if (!isLetter && !sections.some((s) => /experience/i.test(s))) {
-    score -= 10;
     issues.push({ level: 'warn', text: 'No "Experience" section heading — parsers key on standard headings (Summary, Experience, Education, Skills).' });
   }
   if (isLetter) {
-    const words = plain.split(/\s+/).filter(Boolean).length;
-    if (words > 450) {
-      score -= 10;
-      issues.push({ level: 'warn', text: `${words} words — cover letters land best at 250–350.` });
-    }
+    const n = words(plain);
+    if (n > 450) issues.push({ level: 'warn', text: `${n} words — cover letters land best at 250–350.` });
     if (/\b(excited to apply|proven track record|passionate about leveraging|esteemed organi[sz]ation|dynamic team player)\b/i.test(plain)) {
-      score -= 10;
       issues.push({ level: 'warn', text: 'Contains AI/boilerplate tells ("excited to apply", "proven track record"…) — rewrite in your own words.' });
     }
     if (input.application && !new RegExp(input.application.company.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(plain)) {
-      score -= 10;
       issues.push({ level: 'warn', text: `Doesn't mention ${input.application.company} by name — make it unmistakably specific to this job.` });
     }
   }
-  if (coverage != null) {
-    score -= Math.round((1 - coverage) * 20);
-    if (missing.length) {
-      issues.push({
-        level: 'info',
-        text: `Posting keywords not present: ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? '…' : ''} — add only the ones that are genuinely true for you.`,
-      });
-    }
+  if (coverage != null && missing.length) {
+    issues.push({
+      level: 'info',
+      text: `Posting keywords not present: ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? '…' : ''} — add only the ones that are genuinely true for you.`,
+    });
   }
   if (unaddressed.length) {
     issues.push({ level: 'warn', text: `Must-haves not evidenced: ${unaddressed.slice(0, 3).map((s) => s.replace(/\.$/, '')).join('; ')}` });
   }
   if (unverifiedClaims.length) {
-    score -= Math.min(10, unverifiedClaims.length * 3);
     issues.push({ level: 'warn', text: `${unverifiedClaims.length} number(s) in the resume don't appear in your profile — verify they're true before sending.` });
   }
-  score = Math.max(0, Math.min(100, score));
+
+  // Letters: sentences that reuse wording from the person's other letters (the closing may; the argument may not).
+  const seen = new Set((input.siblings ?? []).flatMap((s) => shingles(s)));
+  const dear = blocks.findIndex((b) => /^(dear|hello|hi)\b/i.test(b.text));
+  const recycled = isLetter ? sentences(blocks.slice(dear + 1, -3).map((b) => b.text).join(' ')).filter((s) => shingles(s).some((g) => seen.has(g))).length : 0;
+
+  const audit = buildAudit({
+    kind: input.kind,
+    blocks,
+    plain,
+    textChars: text.length,
+    pages,
+    parseable,
+    cid,
+    lostGlyphs: lost.length,
+    placeholders: placeholders.length,
+    email: !!email,
+    phone: !!phone,
+    sections,
+    keywords: kws.length ? match : null,
+    mustHaves: an ? { addressed: addressed.length, total: addressed.length + unaddressed.length, unaddressed } : null,
+    unverifiedClaims: unverifiedClaims.length,
+    hasProfile: !!prof.trim(),
+    app: input.application,
+    recycled,
+  });
 
   return {
-    score,
+    score: audit.score,
+    verdict: audit.verdict,
+    categories: audit.categories,
+    standout: audit.standout,
     parseable,
     pages,
     extractedChars: text.length,
     placeholders,
     contact: { email, phone },
     sections,
-    keywords: { found, missing, coverage },
+    keywords: { found, missing, coverage, skillsOnly: match.skillsOnly },
     mustHaves: { addressed, unaddressed },
     unverifiedClaims,
     issues,
@@ -630,14 +644,8 @@ export async function analyzeAts(input: {
 // tails, dash-heavy prose, pet phrases, unbacked skills, mixed spelling and
 // recycled letter text.
 
-const FILLER = /\b(passionate|proven track record|results[- ]driven|leverag(?:e|ed|es|ing)|synerg(?:y|ies)|spearhead(?:ed|ing|s)?|cutting[- ]edge|seamless(?:ly)?|world[- ]class|genuinely|dynamic team)\b/gi;
-const BRIDGE = /\s[—–]\s(directly transferable|exactly what|which maps|the same\b[^.]{0,60}\b(?:role|team|position)\b|an?\s+\S+-style\b)/i;
-const WEAK_OPENER = /^(responsible for|worked on|helped|involved in|participated in|tasked with|assisted)\b/i;
+// FILLER, BRIDGE, WEAK_OPENER and SPELLING live in audit.ts, where the Style category scores them too.
 const PHRASE_STOP = new Set('the a an and or of to in for with on at by from as is are be was were that this it its into across our their your my'.split(' '));
-const SPELLING: [uk: string, us: string][] = [
-  ['organis', 'organiz'], ['optimis', 'optimiz'], ['utilis', 'utiliz'], ['prioritis', 'prioritiz'], ['standardis', 'standardiz'],
-  ['containeris', 'containeriz'], ['modernis', 'moderniz'], ['behaviour', 'behavior'], ['colour', 'color'], ['catalogue', 'catalog'],
-];
 
 const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
 const quote = (s: string, n = 60) => `"${s.length > n ? s.slice(0, n).trimEnd() + '…' : s}"`;
@@ -763,8 +771,14 @@ function letterSuggestions(blocks: Block[], plain: string, app: Application | nu
 /** Compact text rendering of a report, for agents (live mode + plugin). */
 export function summarizeAts(r: AtsReport): string {
   const lines = [
-    `ATS score ${r.score}/100 · ${r.pages} page(s) · parseable: ${r.parseable ? 'yes' : 'NO'} · email: ${r.contact.email ?? 'missing'} · phone: ${r.contact.phone ?? 'missing'}`,
-    r.keywords.coverage != null ? `Keyword coverage ${Math.round(r.keywords.coverage * 100)}% — missing: ${r.keywords.missing.join(', ') || 'none'}` : 'No posting keywords to compare against.',
+    `Audit score ${r.score}/100 — ${r.verdict}`,
+    `Categories: ${r.categories.map((c) => `${c.label} ${c.score} (${Math.round(c.weight * 100)}%)`).join(' · ')}`,
+    r.standout.length ? `Stands out: ${r.standout.join('; ')}` : '',
+    `${r.pages} page(s) · parseable: ${r.parseable ? 'yes' : 'NO'} · email: ${r.contact.email ?? 'missing'} · phone: ${r.contact.phone ?? 'missing'}`,
+    r.keywords.coverage != null
+      ? `Keyword coverage ${Math.round(r.keywords.coverage * 100)}% (weighted; k8s = Kubernetes, a skills-list-only mention counts 60%) — missing: ${r.keywords.missing.join(', ') || 'none'}${r.keywords.skillsOnly.length ? ` — only in the skills list: ${r.keywords.skillsOnly.join(', ')}` : ''}`
+      : 'No posting keywords to compare against.',
+    ...r.categories.flatMap((c) => c.findings.map((f) => `[${c.label.toLowerCase()}] ${f}`)),
     r.mustHaves.unaddressed.length ? `Must-haves not evidenced: ${r.mustHaves.unaddressed.join(' | ')}` : 'All extracted must-haves are evidenced.',
     r.placeholders.length ? `BLOCKING: ${r.placeholders.length} placeholder(s) remain: ${r.placeholders.join(', ')}` : '',
     r.unverifiedClaims.length ? `Verify these numbers (not in profile):\n- ${r.unverifiedClaims.join('\n- ')}` : '',

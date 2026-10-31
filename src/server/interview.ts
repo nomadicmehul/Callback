@@ -22,7 +22,22 @@ import {
   finishInterviewSession,
   proposeMemory,
   countDrillsSince,
+  getApplication,
 } from './db';
+import { groundTruth } from './experience';
+import { ARCH_BLUEPRINT, exerciseFor, learningPath, recommend, studyPlan, type DimResult, type TopicHit } from './resources';
+import { isHeadingLine, isRoleLine } from './cvtext';
+import { STOP } from './resume';
+import { hasMetric } from './audit';
+
+/** Posting words that name nothing to revise — verbs and framing the keyword extractor lets through. */
+const GENERIC = new Set(
+  (
+    'build design run own define deliver drive event events streaming platform platforms systems system experience knowledge strong production teams team engineering environments environment infrastructure tools tooling services service solutions years ability ' +
+    'required require requirements requirement must solid proven deep hands familiarity understanding skills skill excellent good working least including similar related relevant'
+  ).split(' '),
+);
+const isContactLine = (s: string) => /@|https?:\/\/|linkedin\.com|github\.com|\+?\d[\d\s().-]{7,}\d/.test(s);
 
 export const INTERVIEW_MODES: InterviewMode[] = ['behavioral', 'technical', 'system_design'];
 
@@ -101,10 +116,19 @@ export const trimDot = (s: string) => s.trim().replace(/\.$/, '');
 /** The first profile line that plausibly evidences a requirement — shared by the
  *  prep pack and the cover letter so both point at the SAME real experience. */
 export function findEvidence(profile: string, requirement: string): string | null {
-  const words = requirement.toLowerCase().split(/\W+/).filter((w) => w.length > 4);
-  if (!words.length) return null;
-  const hit = profile.split(/\n/).find((line) => words.some((w) => line.toLowerCase().includes(w)));
-  return hit ? hit.trim().replace(/^[-•*]\s*/, '') : null;
+  // Real terms only: "aws" and "eks" count, "experience" and "required" don't.
+  const terms = [...new Set(requirement.toLowerCase().split(/[^a-z0-9+#]+/))].filter((w) => w.length > 2 && !STOP.has(w) && !GENERIC.has(w));
+  if (!terms.length) return null;
+  let best: string | null = null;
+  let top = 0;
+  for (const raw of profile.split(/\n/)) {
+    const line = raw.trim();
+    if (!line || isHeadingLine(line) || isContactLine(line)) continue; // a heading or a phone number is never evidence
+    const hay = line.toLowerCase();
+    const score = terms.filter((t) => hay.includes(t)).length + (hasMetric(line) ? 0.5 : 0); // a figure wins a tie
+    if (score > top) [best, top] = [line, score];
+  }
+  return top >= 1 && best ? best.replace(/^[-•*]\s*/, '') : null;
 }
 const countWords = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
 const countRe = (s: string, re: RegExp) => (s.match(re) ?? []).length;
@@ -342,12 +366,35 @@ export function completeSession(sessionId: string, ctx?: RunContext): string {
     ctx?.emit({ type: 'memory_proposed', note });
   }
   const summary = sessionSummary(session.mode, scored, weaknesses.length, countDrillsSince(session.startedAt));
-  finishInterviewSession(sessionId, summary);
+  // Next steps come from every dimension's average (not just the recurring weaknesses) and the job's stack.
+  const app = session.applicationId ? getApplication(session.applicationId) : null;
+  const recommendations = scored.length ? recommend({ mode: session.mode, dims: dimensionResults(session.mode, scored), app, profile: groundTruth() }) : [];
+  finishInterviewSession(sessionId, summary, recommendations);
   return summary;
+}
+
+/** Each rubric dimension's average over the scored answers, with its label and fix. */
+export function dimensionResults(mode: InterviewMode, turns: InterviewTurn[]): DimResult[] {
+  const sums = new Map<string, { s: number; c: number }>();
+  for (const t of turns) {
+    for (const [k, v] of Object.entries(t.score?.dims ?? {})) {
+      const cur = sums.get(k) ?? { s: 0, c: 0 };
+      sums.set(k, { s: cur.s + v, c: cur.c + 1 });
+    }
+  }
+  return DIMENSIONS[mode]
+    .filter((d) => sums.has(d.key))
+    .map((d) => {
+      const { s, c } = sums.get(d.key)!;
+      return { key: d.key, label: d.label, avg: Math.round((s / c) * 10) / 10, fix: d.fix };
+    });
 }
 
 // ─── Prep pack ──────────────────────────────────────────────────────────────
 
+// Everything in the pack comes from two documents the candidate can actually read: their own profile
+// and this posting. Nothing asks how the company builds or "would solve" anything — that is
+// speculation the candidate can't prepare for, and interviewers rarely ask it.
 export function buildPrepPack(app: Application, profile: string, weaknesses: MemoryNote[]): string {
   const an = app.analysis;
   const prof = profile.toLowerCase();
@@ -357,43 +404,98 @@ export function buildPrepPack(app: Application, profile: string, weaknesses: Mem
     return `- **${trimDot(m)}** → ${hit ? `_${hit.slice(0, 140)}_` : '[fill in: your real example, with a number]'}`;
   });
   const behavioral = generateQuestions('behavioral', app).map((q) => `- ${q.q}`);
-  const technical = (an?.keywords ?? []).slice(0, 4).map((k) => `- How have you used **${k}** in production? What would you change at 10x scale?`);
-  const design = /\b(senior|staff|principal|lead)\b/i.test(app.jdText)
-    ? [`- Design the core system a ${app.role} at ${app.company} would own. Requirements → estimates → design → trade-offs → bottlenecks.`]
-    : [];
+
+  // Topics: every technology or practice the posting names, split by whether the profile already shows it.
+  // Links only where a chapter or page exists for the topic — never a wall of resources.
+  const own = `${app.company} ${app.role}`.toLowerCase();
+  const shown = new Map((an?.keywords ?? []).map((k) => [k.toLowerCase().trim(), k.trim()])); // keep the posting's casing
+  const kws = [...shown.keys()].filter((k) => k.length > 2 && !own.includes(k));
+  // The interview framework is advice, not a topic to revise — it gets its own line under system design.
+  const plan = studyPlan(app, profile).filter((p) => p.topic.key !== 'framework');
+  const covered = new Set(plan.flatMap((p) => p.terms));
+  const loose = kws.filter((k) => !covered.has(k) && k.length > 3 && !STOP.has(k) && !GENERIC.has(k));
+  const quote = (k: string) => {
+    const line = findEvidence(profile, k);
+    return line ? ` — you wrote: _${line.slice(0, 120)}_` : '';
+  };
+  // Topic lines name the topic; the links live once, in "Read before the day" (at most six).
+  const topicLine = (p: TopicHit) =>
+    `- **${p.topic.label}** (${p.terms.slice(0, 3).join(', ')})${p.known ? quote(p.terms[0]) : ' — not in your profile; the reading list below has the chapter or page'}`;
+  const revise = [...plan.filter((p) => p.known).map(topicLine), ...loose.filter((k) => prof.includes(k)).map((k) => `- **${shown.get(k)}**${quote(k)}`)];
+  const learn = [
+    ...plan.filter((p) => !p.known).map(topicLine),
+    ...loose.filter((k) => !prof.includes(k)).map((k) => `- **${shown.get(k)}** — not in your profile; learn the basics, and if asked say so and how you'd ramp up`),
+  ];
+
+  // Technical questions are about what the candidate's own CV says they did — never about the company's systems.
+  const technical = kws
+    .filter((k) => prof.includes(k) && !STOP.has(k) && !GENERIC.has(k))
+    .slice(0, 4)
+    .map((k) => {
+      const line = findEvidence(profile, k);
+      return `- Explain how you used **${shown.get(k)}**${line ? ` — your CV says "_${line.slice(0, 100)}_"` : ''}: the problem, the alternative you rejected, and what you'd do differently now.`;
+    });
+
+  // System design only when the role calls for it, as the classic exercises that match this stack.
+  const designHits = plan.filter((p) => p.topic.domain === 'system_design' && exerciseFor(p.topic));
+  const senior = /\b(senior|staff|principal|lead|architect|platform)\b/i.test(`${app.role} ${an?.seniority ?? ''}`);
+  const design =
+    designHits.length || senior
+      ? [
+          `- Walk the four steps aloud every time — scope → high-level design → deep dive → wrap up ([Arch Blueprint: interview framework](${ARCH_BLUEPRINT}#framework)).`,
+          ...designHits
+            .slice(0, 2)
+            .map((p) => `- **${exerciseFor(p.topic)}** — the posting names ${p.terms.slice(0, 2).join(', ')}. Read first: [${p.topic.resources[0].title}](${p.topic.resources[0].url}).`),
+          ...(designHits.length ? [] : [`- Design a URL shortener, then a rate limiter — the two classics ([Arch Blueprint](${ARCH_BLUEPRINT}#url-shortener)).`]),
+        ]
+      : [];
+
+  const path = learningPath(app, plan);
+  const study = [...new Map(plan.flatMap((p) => p.topic.resources).map((r) => [r.url, r])).values()].slice(0, 6).map((r) => `- [${r.source}: ${r.title}](${r.url})`);
+  if (path) study.push(`- Track for this level: [${path.source}: ${path.title}](${path.url})`);
+
+  // Lines with a real figure — not the contact line, not a role's date range.
   const stories = profile
     .split(/\n/)
-    .filter((l) => /\d/.test(l) && l.trim().length > 30)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 30 && hasMetric(l) && !isContactLine(l) && !isRoleLine(l) && !isHeadingLine(l))
     .slice(0, 5)
-    .map((l) => `- ${l.trim().replace(/^[-•*]\s*/, '')}`);
+    .map((l) => `- ${l.replace(/^[-•*]\s*/, '')}`);
   const watch = weaknesses.length ? weaknesses.map((w) => `- ${w.content}`) : ['- No recorded weaknesses yet — run a mock interview to find them.'];
 
   return `# Interview prep — ${app.role} @ ${app.company}
 
-> Prep **before** the interview. This pack is grounded in your real profile and the role's actual requirements. Nothing here is for use *during* a live interview.
+> Prep **before** the interview. Everything here comes from your own profile and this posting — not from guesses about how ${app.company} builds its systems. Nothing here is for use *during* a live interview.
 
 ## The role in one glance
 ${an?.fitRationale ? `- Fit: **${an.fitScore ?? '?'}/100** — ${an.fitRationale}` : '- Run a tailor pass first for a fit analysis.'}
 ${an?.redFlags.length ? `- Watch-outs in the posting: ${an.redFlags.map(trimDot).join('; ')}` : ''}
 ${prof ? '' : '- ⚠️ No profile on file — add your resume in Settings so this pack can map requirements to *your* evidence.'}
 
+## Topics to revise
+**You've done this — brush up and have one example ready**
+${revise.join('\n') || '- Nothing the posting names shows up in your profile yet — see below.'}
+
+**Not in your profile — learn the basics, and be upfront if asked**
+${learn.join('\n') || '- Nothing missing: every topic the posting names appears in your profile.'}
+
 ## Must-haves → your evidence
 ${evidence.join('\n') || '- (no must-haves extracted)'}
 
 ## Likely questions
-**Behavioral (from the JD)**
+**Behavioral — from the posting's own responsibilities**
 ${behavioral.join('\n') || '- Tell me about your most impactful project. How did you measure it?'}
 
-**Technical**
-${technical.join('\n') || '- Walk through the hardest problem you solved recently: approach, complexity, edge cases.'}
-${design.length ? `\n**System design**\n${design.join('\n')}` : ''}
+**Technical — about what you've actually done**
+${technical.join('\n') || '- Walk through the hardest problem you solved recently: the approach, its complexity, the edge cases.'}
+${design.length ? `\n**System design — classic exercises matched to this stack**\n${design.join('\n')}` : ''}
 
 ## Stories to have ready (from your profile — the lines with numbers)
 ${stories.join('\n') || '- [fill in: 4–6 real STAR stories, each with a measurable result]'}
 
 ## Your known weak spots — rehearse these
 ${watch.join('\n')}
-
+${study.length ? `\n## Read before the day\n${study.join('\n')}\n` : ''}
 ## Before the day
 - Re-read the posting and your submitted resume — the interviewer has the same two documents.
 - Prepare 3 questions for them (team, success metrics for the role, biggest current challenge).
