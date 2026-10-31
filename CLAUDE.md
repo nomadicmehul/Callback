@@ -60,6 +60,8 @@ src/server/
   profile.ts  CV ingestion (PDF via unpdf, DOCX via mammoth, text)
   cvtext.ts   reading CV text: parseHeader (name/contact/headline block), reflow PDF line wraps, heading/bullet/role lines
   cvformat.ts learnFormat(): a DocFormat read from the person's own .docx (font, sizes, colours, header order, headings, page)
+  evidence.ts which of the candidate's own lines/stories back a requirement (shared by drafter + gap suggestions)
+  gapsuggest.ts suggestGaps(): per-gap tip, pre-fill and options from CV, confirmed stories and earlier gap answers
   fonts.ts    findFontFiles(): a learned font's TTF/OTF on this machine, embedded in PDFs (ligatures off — ATS text layer)
   experience.ts experience bank: imports (CV, LinkedIn ZIP via node:zlib, GitHub API, a public link), quick-add
               structuring, bankText()/groundTruth() — what drafts, profile_get and the honesty check read
@@ -118,6 +120,9 @@ bundled `dist/` even in a checkout. Use a different port per concurrent test ser
   one). Renderers take `style`; the default header is name → contact line → bold headline; `headerOrder: 'auto'` keeps the
   draft's own order, and the drafter then keeps the CV's
   (`parseHeader()` in cvtext.ts reads name / headline / contact as a block — never through `reflow()`).
+- Gap answers: everything typed into a gap is stored in `gap_answers` with its `gapKind()` (shared/placeholders.ts).
+  Standing kinds (availability, name, contact) are reused as is — the drafter fills them in; experience kinds
+  pre-fill only on a strong match with a real number; openings are never reused (only real company connections).
 - Experience bank: `proposed | active | archived`. Imports and agent saves arrive `proposed`; only `active`
   entries reach drafts (`groundTruth()` = profile text + active bank). Anything the human typed is theirs, so it
   saves `active`. Imports dedupe on kind + title + org, including archived entries (a discard sticks).

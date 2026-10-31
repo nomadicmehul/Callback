@@ -14,6 +14,7 @@ import type {
   ExperienceKind,
   ExperienceSource,
   ExperienceStatus,
+  GapAnswer,
   MemoryNote,
   MemoryStatus,
   Outcome,
@@ -184,6 +185,16 @@ function migrate(): void {
       source_ref TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS gap_answers (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      hint TEXT NOT NULL,
+      answer TEXT NOT NULL,
+      company TEXT,
+      artifact_kind TEXT,
+      created_at TEXT NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_turns_session ON interview_turns(session_id);
@@ -557,6 +568,26 @@ export function updateExperience(id: string, patch: Partial<ExperienceInput>): E
 export function findExperienceDuplicate(kind: ExperienceKind, title: string, org: string | null): Experience | null {
   const key = (s: string | null) => (s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   return listExperiences().find((e) => e.kind === kind && key(e.title) === key(title) && key(e.org) === key(org)) ?? null;
+}
+
+// ─── Gap answers (what the person typed into a draft's gaps) ────────────────
+
+function rowToGapAnswer(r: any): GapAnswer {
+  return { id: r.id, kind: r.kind, hint: r.hint, answer: r.answer, company: r.company ?? null, artifactKind: r.artifact_kind ?? null, createdAt: r.created_at };
+}
+
+export function addGapAnswers(items: Omit<GapAnswer, 'id' | 'createdAt'>[]): number {
+  const stmt = db.prepare('INSERT INTO gap_answers (id, kind, hint, answer, company, artifact_kind, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  for (const a of items) stmt.run(`gap_${nanoid(10)}`, a.kind, a.hint.slice(0, 300), a.answer.slice(0, 2000), a.company, a.artifactKind, now());
+  return items.length;
+}
+
+/** Newest first. */
+export function listGapAnswers(kind?: string): GapAnswer[] {
+  const rows = kind
+    ? db.prepare('SELECT * FROM gap_answers WHERE kind = ? ORDER BY created_at DESC').all(kind)
+    : db.prepare('SELECT * FROM gap_answers ORDER BY created_at DESC').all();
+  return rows.map(rowToGapAnswer);
 }
 
 // ─── Outcomes ───────────────────────────────────────────────────────────────

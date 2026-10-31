@@ -43,6 +43,8 @@ import {
 import { normalizeEntry } from './resume';
 import { isBulletLine, isHeadingLine, isLabelLine, isRoleLine, parseHeader, reflow } from './cvtext';
 import { bankText, groundTruth } from './experience';
+import { STOP, evidenceFor, firstPerson, hasFigure, storyFor } from './evidence';
+import { standingAnswers } from './gapsuggest';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -357,14 +359,6 @@ async function demoTailor(ctx: RunContext, app: Application): Promise<string> {
 
 // ─── Demo heuristics (no AI, deterministic, honest) ─────────────────────────
 
-const STOP = new Set(
-  (
-    'the a an and or of to in for with on at by from as is are be we you your our their this that will who what which role team work years experience including etc ' +
-    'have has must strong hiring hire need needs required requirements skills skill ability able plus nice preferred looking join about across within using also well ' +
-    'our you yours they them into over more most such than then these those very each both any all can may should would ' +
-    'through teams technical driving partner days interview people company offer benefits culture help make like want just'
-  ).split(/\s+/),
-);
 
 function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
@@ -449,58 +443,6 @@ function profileAsResumeBody(profile: string, skip: (line: string) => boolean): 
   return skills.length ? `## Technical Skills\n${skills.join('\n')}\n\n${experience}` : experience;
 }
 
-const GENERIC = new Set(
-  'extensive proven deep solid knowledge background roles environment fluency least technologies ecosystem strategies large scale multi such including demonstrated hands'.split(' '),
-);
-
-/** The profile sentence that best evidences a requirement: the one sharing the most of its
- *  real terms (skills lines count a little less — a list isn't a story). Null when nothing does. */
-/** Matching terms needed to count as evidence: short requirements ("Kubernetes and Terraform") need one, longer ones two. */
-const enough = (terms: string[]) => (terms.length <= 3 ? 1 : 2);
-const requirementTerms = (requirement: string) =>
-  [...new Set(requirement.toLowerCase().split(/[^a-z0-9+#]+/))].filter((w) => w.length > 2 && !STOP.has(w) && !GENERIC.has(w));
-
-/** The confirmed story that best evidences a requirement (at least two of its real terms). */
-function storyFor(bank: Experience[], requirement: string, used = new Set<string>()): Experience | null {
-  const terms = requirementTerms(requirement);
-  let best: Experience | null = null;
-  let top = 0;
-  for (const e of bank) {
-    if (e.kind !== 'story' || used.has(e.id)) continue;
-    const hay = [e.title, e.situation, e.action, e.result, e.details, e.tags.join(' ')].filter(Boolean).join(' ').toLowerCase();
-    const score = terms.filter((t) => hay.includes(t)).length;
-    if (score > top) [best, top] = [e, score];
-  }
-  return top >= enough(terms) ? best : null;
-}
-
-const hasFigure = (s: string | null) => !!s && /\d/.test(s.replace(/\b(19|20)\d{2}\b/g, ''));
-const PAST_VERB = /^(\w+ed|Led|Built|Ran|Wrote|Cut|Grew|Drove|Made|Set|Took|Won|Shipped|Brought|Kept|Found|Rebuilt|Held|Taught|Sold|Spoke)\b/;
-/** "Cut p99 latency by 35%" → "I cut p99 latency by 35%." — a letter speaks in the first person. */
-function firstPerson(s: string): string {
-  const t = s.trim().replace(/\s+/g, ' ').replace(/[.!?]*$/, '.');
-  return PAST_VERB.test(t) ? `I ${t.charAt(0).toLowerCase()}${t.slice(1)}` : t.charAt(0).toUpperCase() + t.slice(1);
-}
-
-function evidenceFor(profile: string, requirement: string, opts: { prose?: boolean } = {}): string | null {
-  const terms = requirementTerms(requirement);
-  let best: string | null = null;
-  let top = 0;
-  for (const line of profile.split('\n')) {
-    if (!line || /@/.test(line) || isHeadingLine(line) || isRoleLine(line) || /\s\|\s/.test(line)) continue;
-    const label = /^(?:[-*•]\s*)?([^:]{1,40}):\s+/.exec(line);
-    if (label && opts.prose) continue; // a letter quotes a sentence, never a skills list
-    const weight = label ? 0.75 : 1;
-    const text = line.replace(/^[-*•]\s*/, '').replace(/^[^:]{1,40}:\s+/, '');
-    for (const sent of text.split(/(?<=[.!?])\s+/)) {
-      const hay = `${label?.[1] ?? ''} ${sent}`.toLowerCase();
-      const score = terms.filter((t) => hay.includes(t)).length * weight;
-      if (score > top) [best, top] = [sent, score];
-    }
-  }
-  if (!best || top < Math.min(1.5, enough(terms))) return null;
-  return opts.prose || best.length <= 180 ? best : best.slice(0, 180).replace(/\s+\S*$/, '') + '…';
-}
 
 /** Posting text going inside a `[fill in: …]` hint — a stray "]" would end the placeholder early. */
 const hint = (s: string) => s.replace(/[[\]]/g, '');
@@ -639,7 +581,8 @@ function buildCoverLetterDraft(app: Application, analysis: JdAnalysis, cv: strin
     : ['[fill in: one or two short paragraphs tying your real experience to what this role needs most]'];
   const gap = must.slice(2).find((m) => !storyFor(bank, m) && !evidenceFor(profile, m));
 
-  return `> ✉️ **Honest draft, written for ${app.company} only.** Grounded in your profile and this posting — never reuse it with the company name swapped. Fill every gap with real details and make it sound like you; recruiters spot boilerplate instantly. Notes like this never appear in the PDF/DOCX.
+  const { availability } = standingAnswers(); // what they told an earlier letter — a standing fact, reused as is
+  return `> ✉️ **Honest draft, written for ${app.company} only.** Grounded in your profile and this posting — never reuse it with the company name swapped. Fill every gap with real details and make it sound like you; recruiters spot boilerplate instantly. Notes like this never appear in the PDF/DOCX.${availability ? '\n> Where you’re based and when you can start come from your last letter — update them if they’ve changed.' : ''}
 
 # ${name ?? '[fill in: your name]'}
 ${contact ?? '[fill in: City, Country | phone | email | linkedin.com/in/…]'}
@@ -655,7 +598,7 @@ Dear ${app.company} Hiring Team,
 
 ${body.join('\n\n')}
 ${gap ? `\n[fill in: one honest sentence on ${hint(requirementPhrase(gap))} — your profile doesn't show it yet; say how you'd ramp up, or drop this]\n` : ''}
-[fill in: where you're based and when you could start]. I would welcome the chance to talk.
+${availability ?? "[fill in: where you're based and when you could start]"}. I would welcome the chance to talk.
 
 Kind regards,
 ${name ?? '[fill in: your name]'}

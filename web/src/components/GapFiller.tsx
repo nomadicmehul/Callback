@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { GapSuggestion } from '@shared/types';
 import { findGaps, type Gap, type GapFill } from '@shared/placeholders';
+import { api } from '../lib/api';
 
 /** The line around a gap, with the gap itself highlighted. */
 function Context({ gap }: { gap: Gap }) {
@@ -21,13 +23,16 @@ const KEEPABLE = (hint: string) =>
   /example|outcome|result|number|experience/i.test(hint) && !/name|headline|summary|opening|based|start|honest|ramp up/i.test(hint);
 
 /** Walks the human through each `[fill in: …]` gap: type the real detail, or
- *  drop it when there's nothing true to say. Callback never suggests the content. */
+ *  drop it when there's nothing true to say. Suggestions come only from their own
+ *  CV, confirmed experience and earlier answers — pre-filled or one click, always checked. */
 export function GapFiller({
+  artifactId,
   content,
   busy,
   onSave,
   onCancel,
 }: {
+  artifactId: string;
   content: string;
   busy: boolean;
   /** `keep`: indexes of answers to also save to the experience bank. */
@@ -38,6 +43,20 @@ export function GapFiller({
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [dropped, setDropped] = useState<Set<number>>(new Set());
   const [keep, setKeep] = useState<Set<number>>(() => new Set(gaps.filter((g) => KEEPABLE(g.hint)).map((g) => g.index)));
+  const [hints, setHints] = useState<Record<number, GapSuggestion>>({});
+  const [prefilled, setPrefilled] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    api
+      .gapSuggestions(artifactId)
+      .then((list) => {
+        setHints(Object.fromEntries(list.map((s) => [s.index, s])));
+        const pre = Object.fromEntries(list.filter((s) => s.fill).map((s) => [s.index, s.fill!.text]));
+        setPrefilled(Object.fromEntries(list.filter((s) => s.fill).map((s) => [s.index, s.fill!.source])));
+        setAnswers((cur) => ({ ...pre, ...cur })); // never overwrite what they've typed
+      })
+      .catch(() => {});
+  }, [artifactId]);
 
   const fills: GapFill[] = gaps.flatMap((g): GapFill[] =>
     dropped.has(g.index) ? [{ index: g.index, drop: true }] : answers[g.index]?.trim() ? [{ index: g.index, text: answers[g.index] }] : [],
@@ -60,6 +79,7 @@ export function GapFiller({
       {gaps.map((g) => (
         <div key={g.index} className={`gap-row${dropped.has(g.index) ? ' dropped' : ''}`}>
           <Context gap={g} />
+          {hints[g.index] && !dropped.has(g.index) && <div className="gap-tip">💡 {hints[g.index].tip}</div>}
           {dropped.has(g.index) ? (
             <div className="gap-input">
               <span className="scrim-note" style={{ flex: 1 }}>
@@ -75,11 +95,34 @@ export function GapFiller({
                 rows={2}
                 placeholder={g.hint || 'The real detail'}
                 value={answers[g.index] ?? ''}
-                onChange={(e) => setAnswers({ ...answers, [g.index]: e.target.value })}
+                onChange={(e) => {
+                  setAnswers({ ...answers, [g.index]: e.target.value });
+                  if (prefilled[g.index]) setPrefilled({ ...prefilled, [g.index]: '' });
+                }}
               />
               <button className="btn ghost sm" onClick={() => toggleDrop(g.index)} disabled={busy} title="Remove this from the draft">
                 Drop
               </button>
+            </div>
+          )}
+          {!dropped.has(g.index) && prefilled[g.index] && <div className="gap-from">✓ Filled from {prefilled[g.index]} — check it’s still right</div>}
+          {!dropped.has(g.index) && (hints[g.index]?.options.length ?? 0) > 0 && (
+            <div className="gap-options">
+              <span className="scrim-note">From what you’ve told Callback — click to use, then edit:</span>
+              {hints[g.index].options.map((o) => (
+                <button
+                  key={o.text}
+                  className="gap-chip"
+                  title={o.text}
+                  onClick={() => {
+                    setAnswers({ ...answers, [g.index]: o.text });
+                    setPrefilled({ ...prefilled, [g.index]: o.source });
+                  }}
+                >
+                  {o.text.length > 110 ? `${o.text.slice(0, 110)}…` : o.text}
+                  <span className="gap-chip-src">{o.source}</span>
+                </button>
+              ))}
             </div>
           )}
           {!dropped.has(g.index) && answers[g.index]?.trim() && (

@@ -26,6 +26,7 @@ import {
 import { scheduleDrill, completeSession, recordDrillResult, INTERVIEW_MODES } from './interview';
 import { addExperience, getArtifact, listArtifactsOfKind, listExperiences, updateArtifact } from './db';
 import { bankText, groundTruth, importFromCv, importGitHub, importLink } from './experience';
+import { standingAnswers } from './gapsuggest';
 import { parseResumeMarkdown, renderPdf, analyzeAts, summarizeAts, exportArtifact, findPlaceholders } from './resume';
 
 const ok = (text: string) => ({ content: [{ type: 'text' as const, text }] });
@@ -49,7 +50,16 @@ export function jobsearchTools(ctx: RunContext) {
             'NO PROFILE ON FILE. Do not draft from assumptions. Ask the user to add their resume (dashboard: Settings → Profile, or /callback:setup in Claude Code), or call profile_set with text they provide.',
           );
         }
-        return ok([p ? `Candidate profile (${p.length} chars):\n\n${p}` : 'No resume text on file — the experience bank below is all there is.', bank].filter(Boolean).join('\n\n'));
+        const { availability } = standingAnswers();
+        return ok(
+          [
+            p ? `Candidate profile (${p.length} chars):\n\n${p}` : 'No resume text on file — the experience bank below is all there is.',
+            bank,
+            availability ? `Where they're based and when they can start (their own words, from an earlier letter): "${availability}"` : '',
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
+        );
       },
       RO,
     ),

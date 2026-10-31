@@ -87,3 +87,39 @@ export function fillGaps(md: string, fills: GapFill[]): string {
   }
   return out.join('\n');
 }
+
+// ─── Gap kinds: what a gap asks for, so answers can be reused and tips given ─
+
+export type GapKind = 'opening' | 'outcome' | 'example' | 'honest' | 'availability' | 'headline' | 'summary' | 'name' | 'contact' | 'other';
+
+/** What kind of detail a placeholder asks for, read from its hint. Order matters: the most specific first. */
+export function gapKind(hint: string): GapKind {
+  const h = hint.toLowerCase();
+  if (/^your name$/.test(h)) return 'name';
+  if (/city, country|phone \||email/.test(h)) return 'contact';
+  if (/headline/.test(h)) return 'headline';
+  if (/opening line/.test(h)) return 'opening';
+  if (/honest/.test(h)) return 'honest';
+  if (/based and when|could start|start date|notice period/.test(h)) return 'availability';
+  if (/3–4 lines|in your own words — years/.test(h)) return 'summary';
+  if (/outcome|result/.test(h)) return 'outcome';
+  if (/example|true result|true, specific/.test(h)) return 'example';
+  return 'other';
+}
+
+/** One line of recruiter-style guidance per kind, shown next to the gap. */
+export const GAP_TIPS: Record<GapKind, string> = {
+  opening: 'One sentence only you could write: a product of theirs you use, a problem of theirs you’ve solved, or how you know the team. Never “I am writing to apply”.',
+  outcome: 'What changed because of it — a number makes it checkable: time, %, money, people, scale.',
+  example: 'One specific time you did this: what it was, what you did, and what happened. One or two sentences.',
+  honest: 'Name the gap plainly, then one concrete step you’d take — confident, not apologetic.',
+  availability: 'Where you’re based and your earliest start date or notice period.',
+  headline: 'Target role | 2–3 strengths you can back up.',
+  summary: '3–4 lines: years of experience, what you own today, your two strongest numbers, one specialty.',
+  name: 'As on your CV.',
+  contact: 'City, phone, email and the links reviewers check — as on your CV.',
+  other: 'A real detail, in your words.',
+};
+
+/** Kinds whose answer is a standing fact about the person — safe to reuse as is in the next draft. */
+export const STANDING_KINDS: GapKind[] = ['availability', 'name', 'contact'];
