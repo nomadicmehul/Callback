@@ -51,8 +51,11 @@ export function ArtifactCard({
     try {
       const next = fillGaps(artifact.content, fills);
       await api.updateArtifact(artifact.id, next);
-      // Answers about real experience go to the bank, so the next draft can use them.
+      // Remember every answer (where you're based, a headline…) so the next draft can reuse or suggest it;
+      // answers about real experience also go to the bank.
       const gaps = findGaps(artifact.content);
+      const typed = fills.flatMap((f) => ('text' in f && gaps[f.index] ? [{ hint: gaps[f.index].hint, answer: f.text }] : []));
+      if (typed.length) await api.recordGapAnswers(artifact.id, typed).catch(() => {});
       for (const f of fills) {
         if (!('text' in f) || !keep.includes(f.index)) continue;
         const text = f.text.replace(/\s+/g, ' ').trim();
@@ -168,7 +171,7 @@ export function ArtifactCard({
             <div style={{ fontSize: 12.5, marginBottom: 8, color: msg.kind === 'ok' ? 'var(--brand)' : 'var(--danger)' }}>{msg.text}</div>
           )}
           {filling ? (
-            <GapFiller content={artifact.content} busy={busy} onSave={saveFills} onCancel={() => setFilling(false)} />
+            <GapFiller artifactId={artifact.id} content={artifact.content} busy={busy} onSave={saveFills} onCancel={() => setFilling(false)} />
           ) : editing ? (
             <>
               <textarea value={draft} onChange={(e) => setDraft(e.target.value)} style={{ minHeight: 320 }} />
