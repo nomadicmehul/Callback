@@ -59,9 +59,12 @@ import {
   addExperience,
   listExperiences,
   updateExperience,
+  addGapAnswers,
 } from './db';
 import { groundTruth, importFromCv, importGitHub, importLink, importLinkedIn, structureStory } from './experience';
 import { learnFormat } from './cvformat';
+import { suggestGaps } from './gapsuggest';
+import { gapKind } from '@shared/placeholders';
 
 const EXPERIENCE_KINDS: ExperienceKind[] = ['story', 'role', 'project', 'education', 'certification', 'link'];
 const EXPERIENCE_STATUSES: ExperienceStatus[] = ['proposed', 'active', 'archived'];
@@ -373,6 +376,26 @@ export function apiRouter(): Hono {
       siblings: listArtifactsOfKind(art.kind, art.id).map((a) => a.content),
     });
     return c.json({ report });
+  });
+
+  // Suggestions for a draft's gaps — from the person's CV, confirmed experience and earlier answers.
+  api.get('/artifacts/:id/gaps', (c) => {
+    const art = getArtifact(c.req.param('id'));
+    if (!art) return c.json({ error: 'not found' }, 404);
+    return c.json(suggestGaps(art, getApplication(art.applicationId)));
+  });
+
+  // Remember what the person typed into gaps, so the next draft can reuse or suggest it.
+  api.post('/gap-answers', async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const art = getArtifact(String(body.artifactId ?? ''));
+    if (!art) return c.json({ error: 'artifact not found' }, 404);
+    const answers = (Array.isArray(body.answers) ? body.answers : [])
+      .map((a: any) => ({ hint: String(a?.hint ?? '').trim(), answer: String(a?.answer ?? '').replace(/\s+/g, ' ').trim() }))
+      .filter((a: { hint: string; answer: string }) => a.hint && a.answer);
+    const company = getApplication(art.applicationId)?.company ?? null;
+    const saved = addGapAnswers(answers.map((a: { hint: string; answer: string }) => ({ ...a, kind: gapKind(a.hint), company, artifactKind: art.kind })));
+    return c.json({ saved });
   });
 
   // The audit report: the score, why, and what to do — as JSON + Markdown, or a downloadable .md file

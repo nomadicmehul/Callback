@@ -18,6 +18,7 @@ import type {
   Drill,
   Experience,
   ExperienceInput,
+  GapSuggestion,
   ImportResult,
   InterviewMode,
   InterviewSession,
@@ -141,6 +142,9 @@ export const api = {
 
   // Documents: edit, verify, export
   updateArtifact: (id: string, content: string) => patch(`/api/artifacts/${id}`, { content }).then(j<{ artifact: Artifact }>),
+  gapSuggestions: (id: string) => fetch(`/api/artifacts/${id}/gaps`).then(j<GapSuggestion[]>),
+  recordGapAnswers: (artifactId: string, answers: { hint: string; answer: string }[]) =>
+    post('/api/gap-answers', { artifactId, answers }).then(j<{ saved: number }>),
   atsCheck: (id: string) => post(`/api/artifacts/${id}/ats`).then(j<{ report: AtsReport }>),
   /** The audit as a .md file — saved next to the exports on the server, downloaded here. */
   downloadAudit: async (id: string): Promise<void> => {

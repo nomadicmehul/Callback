@@ -1003,6 +1003,44 @@ mark.gap {
   font-family: var(--font);
   font-size: 13px;
 }
+.gap-tip {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin: -2px 0 6px;
+}
+.gap-from {
+  font-size: 12px;
+  color: var(--brand);
+  margin-top: 4px;
+}
+.gap-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+.gap-chip {
+  text-align: left;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 6px 9px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.gap-chip:hover {
+  border-color: var(--accent);
+  border-style: solid;
+}
+.gap-chip-src {
+  font-size: 11px;
+  color: var(--text-faint);
+}
 .gap-keep {
   display: flex;
   gap: 6px;

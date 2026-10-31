@@ -162,6 +162,31 @@ export const DEFAULT_DOC_FORMAT: DocFormat = {
   learnedFrom: null,
 };
 
+// ─── Gap suggestions (filling a draft's gaps from what Callback already knows) ─
+
+/** An answer the person typed into a gap — remembered so the next draft can reuse or suggest it. */
+export interface GapAnswer {
+  id: string;
+  kind: import('./placeholders').GapKind;
+  hint: string;
+  answer: string;
+  /** The company and document it was written for. */
+  company: string | null;
+  artifactKind: ArtifactKind | null;
+  createdAt: string;
+}
+
+export interface GapSuggestion {
+  /** Matches Gap.index in the draft. */
+  index: number;
+  kind: import('./placeholders').GapKind;
+  tip: string;
+  /** Pre-filled for the person to check — only their own data or past answers, never invented. */
+  fill: { text: string; source: string } | null;
+  /** One-click alternatives (stories, CV lines, past answers, connections to the company). */
+  options: { text: string; source: string }[];
+}
+
 // ─── Experience bank (the candidate's real experience, stored once) ─────────
 // Every resume and cover letter is a view of these facts, so titles, dates and
 // numbers stop drifting between versions. Imported entries start 'proposed'
