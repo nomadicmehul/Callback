@@ -138,6 +138,10 @@ bundled `dist/` even in a checkout. Use a different port per concurrent test ser
   per row in `materialsFor()`; interview sessions carry the pipeline `stage` they were practiced at.
 - Agent SDK: there is **no** `maxBudgetUsd` option; bound runs with `maxTurns` and read
   `result.total_cost_usd`. `canUseTool` returns `{behavior:'allow', updatedInput}` or `{behavior:'deny', message}`.
+- Agent SDK permissions: a tool in `allowedTools` runs **without** calling `canUseTool`, so a write listed
+  there skips the human. Every live run builds its options with `lockedTools(ctx, auto, gated, gate)`
+  (engine.ts): `tools: []` (no shell, files or web), only the named Callback tools on the in-process server,
+  reads in `auto`, writes in `gated` (sent to `gate` → approvals), everything else denied.
 - Approvals: only writes need sign-off (`save_draft` except `interview_prep`, `artifact_update`).
   Reads and `save_jd_analysis` are auto-allowed.
 - Memory notes: `proposed | active | retired`; agents search ACTIVE notes and only ever *propose*.
