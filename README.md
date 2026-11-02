@@ -140,6 +140,12 @@ Callback is built on a simple stance: **assist, don't deceive; keep the human in
 - ✅ **Prep, not cheat** — interview help builds durable skill and never operates during a live interview.
 - ✅ **Your data, your machine** — see it, [export it](#backups--moving-to-a-new-machine), delete it. No selling, no training on your data.
 
+## One folder per application
+
+Every job you act on gets a folder you can open in Finder or Explorer: `<Company>/<Role>/`. It holds the CV and cover letter you send, with plain names (`Jane_Doe_CV.pdf`, `Jane_Doe_Cover_Letter.pdf`, so nothing in a forwarded file gives away where else you applied), Word copies named for the job (`Jane_Doe_CV_Acme_Senior_Platform_Engineer.docx`), the audits, the posting as you captured it (postings disappear), the prep pack, and `application.md` with the status, timeline and mock-interview scores.
+
+A folder is made when you export a document, press **Save to folder** in the job's drawer, or log **applied**. After that its Markdown files stay current. The documents you sent are only rewritten when you save again. Drafts with gaps are never written. A folder that already exists and wasn't made by Callback (say, one of your own from before) is left alone, and the job gets `Role (2)` instead. Correcting the company or role moves the folder along. Choose where the folders go in **Settings → Application folders** (default `~/.callback/applications`). In Claude Code, the `application_folder` tool does the same.
+
 ## Backups & moving to a new machine
 
 Everything Callback knows lives in one folder (`~/.callback`). **Settings → Backup, move & start fresh** exports it as a single `.zip`: your profile, experience bank, memory, every job with its documents and interview history, and your settings (the API key only if you tick it). On the new machine, install Callback, open Settings, **Import backup**, and carry on with the same context — what was there is saved to a safety copy first, and that machine's API key is kept if the archive has none.
