@@ -3,7 +3,7 @@ import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import type { RunContext } from './runctx';
 import type { ApplicationStatus, Artifact, ArtifactKind, JdAnalysis, MemoryKind, OutcomeStage } from '@shared/types';
 import { getConfig, getDocFormat, setConfig } from './config';
-import { postingGuard } from './guard';
+import { guardField, postingGuard } from './guard';
 import { fetchPosting } from './posting';
 import {
   searchMemory,
@@ -154,9 +154,9 @@ export function jobsearchTools(ctx: RunContext) {
       async (args) => {
         const g = postingGuard(args.jdText);
         const app = createApplication({
-          company: args.company || 'Unknown company',
-          role: args.role || 'Unknown role',
-          location: args.location ?? null,
+          company: guardField(args.company, 120) || 'Unknown company',
+          role: guardField(args.role) || 'Unknown role',
+          location: guardField(args.location),
           jdText: g.text,
           jdUrl: args.jdUrl ?? null,
           guardFlags: g.flags,
