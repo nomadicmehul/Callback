@@ -9,8 +9,10 @@ interview prep with scoring and spaced-repetition drills. Repo: https://github.c
 ## Non-negotiables (product principles — never trade these away)
 
 - **Honesty by construction.** Never invent employers, titles, dates, metrics, or skills. Gaps stay
-  visible as `[fill in: …]` placeholders. Export refuses a draft that still has placeholders. The ATS
-  check flags numbers that the profile does not back up.
+  visible as `[fill in: …]` placeholders. Export refuses a draft that still has placeholders, or a role or
+  education line whose employer, school or title the profile doesn't name (`unbackedEntries`). The ATS
+  check flags numbers (whole tokens, years included) that the profile does not back up; `claimsTruth()` =
+  profile + active bank + the person's own gap answers.
 - **Human in the loop.** Agents draft; the human approves every document (resume, cover letter,
   revisions) and submits applications themselves. Callback never auto-submits or sends anything.
 - **Profile first.** Every agent calls `profile_get` before drafting. No profile → honest scaffold.

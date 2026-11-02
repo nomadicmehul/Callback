@@ -437,6 +437,8 @@ export interface AtsReport {
   mustHaves: { addressed: string[]; unaddressed: string[] };
   /** Numbers in the resume that don't appear in the profile — verify they're true. */
   unverifiedClaims: string[];
+  /** Role and education lines whose employer, school or title isn't in the profile — export refuses these. */
+  unbackedEntries: string[];
   issues: { level: 'block' | 'warn' | 'info'; text: string }[];
   /** Short, concrete ways to make the document stronger — style and evidence, never invented content. */
   suggestions: string[];

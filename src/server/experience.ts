@@ -7,7 +7,7 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { unzipFiles } from './zip';
 import type { Experience, ExperienceInput, ExperienceKind, ImportResult } from '@shared/types';
-import { addExperience, findExperienceDuplicate, listExperiences } from './db';
+import { addExperience, findExperienceDuplicate, listExperiences, listGapAnswers } from './db';
 import { getConfig, resolveApiKey } from './config';
 import { modelFor } from './models';
 import { WORKSPACE_DIR } from './paths';
@@ -55,6 +55,12 @@ export function bankText(entries: Experience[] = listExperiences('active')): str
 /** Everything the candidate has confirmed: their profile text plus the active bank. */
 export function groundTruth(): string {
   return [getConfig().candidateProfile?.trim() ?? '', bankText()].filter(Boolean).join('\n\n');
+}
+
+/** What a claim in a draft is checked against: everything confirmed, plus whatever the person typed into a
+ *  gap (their notice period, a start date: all theirs). */
+export function claimsTruth(): string {
+  return [groundTruth(), ...listGapAnswers().map((a) => a.answer)].filter(Boolean).join('\n');
 }
 
 /** Add imported entries as proposals, skipping anything already in the bank (or discarded). */

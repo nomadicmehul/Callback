@@ -27,7 +27,7 @@ import { postingGuard } from './guard';
 import { fetchPosting } from './posting';
 import { extractProfileText, saveProfileFile } from './profile';
 import { answerDrill, INTERVIEW_MODES } from './interview';
-import { parseResumeMarkdown, renderPdf, analyzeAts, exportArtifact, exportBaseName, findPlaceholders } from './resume';
+import { parseResumeMarkdown, renderPdf, analyzeAts, exportArtifact, exportBaseName, findPlaceholders, unbackedEntries } from './resume';
 import { auditMarkdown } from './audit';
 import { backupFilename, exportBackup, importBackup, listBackups, resetData } from './backup';
 import { FILES_DIR } from './paths';
@@ -63,7 +63,7 @@ import {
   updateExperience,
   addGapAnswers,
 } from './db';
-import { groundTruth, importFromCv, importGitHub, importLink, importLinkedIn, structureStory, structureStoryLive } from './experience';
+import { claimsTruth, importFromCv, importGitHub, importLink, importLinkedIn, structureStory, structureStoryLive } from './experience';
 import { experienceCoverage } from './coverage';
 import { learnFormat } from './cvformat';
 import { suggestGaps } from './gapsuggest';
@@ -379,7 +379,7 @@ export function apiRouter(): Hono {
       pdf,
       source: art.content,
       application: app,
-      profile: groundTruth(),
+      profile: claimsTruth(),
       kind: art.kind,
       siblings: listArtifactsOfKind(art.kind, art.id).map((a) => a.content),
     });
@@ -417,7 +417,7 @@ export function apiRouter(): Hono {
       pdf,
       source: art.content,
       application: app,
-      profile: groundTruth(),
+      profile: claimsTruth(),
       kind: art.kind,
       siblings: listArtifactsOfKind(art.kind, art.id).map((a) => a.content),
     });
@@ -444,6 +444,10 @@ export function apiRouter(): Hono {
         { error: `Fill in the ${placeholders.length} placeholder(s) first — Callback won't export a scaffold: ${placeholders.slice(0, 3).join(', ')}` },
         422,
       );
+    }
+    const unbacked = art.kind === 'resume' ? unbackedEntries(art.content, claimsTruth()) : [];
+    if (unbacked.length && !preview) {
+      return c.json({ error: `Not exported — ${unbacked[0]}. If it's real, add it to your profile or experience bank first.` }, 422);
     }
     if (preview) {
       const pdf = await renderPdf(parseResumeMarkdown(art.content), { title: art.title, kind: art.kind, style: getDocFormat() });
