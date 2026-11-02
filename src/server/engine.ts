@@ -44,6 +44,7 @@ import { normalizeEntry } from './resume';
 import { isBulletLine, isHeadingLine, isLabelLine, isRoleLine, parseHeader, reflow } from './cvtext';
 import { bankText, groundTruth } from './experience';
 import { STOP, evidenceFor, firstPerson, hasFigure, storyFor } from './evidence';
+import { jobTerms, parseJd, reorderForJob, skillsIn } from './jdparse';
 import { standingAnswers } from './gapsuggest';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -54,6 +55,7 @@ function chooseDriver(): RunDriverName {
   if (process.env.CALLBACK_DEMO === '1') return 'demo';
   return hasApiKey() ? 'claude' : 'demo';
 }
+const isDemo = () => chooseDriver() === 'demo';
 
 /** Kick off a "tailor" run for an application. Returns immediately; the run
  *  streams its progress over the event bus (SSE). */
@@ -375,31 +377,29 @@ function lines(text: string): string[] {
 const FORM_LINE = /indicates a required field|^(first|last) name\b|accepted file types|^attach\b|submit application|select\.\.\.|public official|gender identity|reasonable accommodation|equal opportunity|^(resume|cv|cover letter)\s*[/*]/i;
 
 function heuristicAnalysis(app: Application, profile: string): JdAnalysis {
-  const ls = lines(app.jdText).filter((l) => !FORM_LINE.test(l));
-  const mustHaves = ls.filter((l) => /\b(required|must|years|proficient|strong|expert|deep|solid)\b/i.test(l)).slice(0, 8);
-  const niceToHaves = ls.filter((l) => /\b(nice to have|preferred|bonus|plus|familiar)\b/i.test(l)).slice(0, 6);
-  const responsibilities = ls
-    .filter((l) => /^(build|design|lead|own|develop|create|drive|collaborate|ship|improve|manage|deliver)/i.test(l))
-    .slice(0, 8);
-  const redFlags = ls.filter((l) => /\b(fast-paced|wear many hats|rockstar|ninja|unlimited pto|work hard play hard)\b/i.test(l)).slice(0, 4);
+  // Read the posting by section: must-haves only from its requirements, never from about-us or benefits.
+  const jd = app.jdText.split(/\r?\n/).filter((l) => !FORM_LINE.test(l)).join('\n');
+  const parts = parseJd(jd, app.company);
+  const { mustHaves, niceToHaves, responsibilities, keywords } = parts;
+  const ls = lines(jd);
+  const redFlags = ls.filter((l) => /\b(fast-paced|wear many hats|rockstar|ninja|work hard play hard)\b/i.test(l)).slice(0, 4);
 
-  // Keyword frequency across the JD.
-  const freq = new Map<string, number>();
-  for (const raw of app.jdText.toLowerCase().split(/[^a-z0-9+#.]+/)) {
-    const tok = raw.replace(/^\.+|\.+$/g, ''); // keep "node.js", drop trailing periods
-    if (tok.length < 3 || STOP.has(tok) || /^\d+$/.test(tok)) continue;
-    freq.set(tok, (freq.get(tok) ?? 0) + 1);
-  }
-  const keywords = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k]) => k);
-
-  // Fit: if we have a profile, score by keyword overlap; else a neutral default.
+  // Fit: how many must-haves the profile actually backs, plus the skills it shares — not word overlap.
   let fitScore = 65;
   let fitRationale = 'Add your profile in Settings for a calibrated fit score.';
   if (profile) {
-    const prof = profile.toLowerCase();
-    const overlap = keywords.filter((k) => prof.includes(k)).length;
-    fitScore = Math.max(45, Math.min(92, 55 + overlap * 4));
-    fitRationale = `Based on overlap between your profile and ${overlap} of the role's top keywords. Verify the must-haves honestly before applying.`;
+    // Same text the drafter reads, so the fit line and the draft's evidence notes always agree.
+    const header = parseHeader(profile);
+    const body = reflow(profile.split(/\r?\n/).slice(header.lines).join('\n'));
+    const backed = mustHaves.filter((m) => evidenceFor(body, m)).length;
+    const have = new Set(skillsIn(profile));
+    const shared = keywords.filter((k) => have.has(k)).length;
+    const mustRatio = mustHaves.length ? backed / mustHaves.length : 0.5;
+    const skillRatio = keywords.length ? shared / keywords.length : 0.5;
+    fitScore = Math.round(Math.max(30, Math.min(95, 35 + 40 * mustRatio + 25 * skillRatio)));
+    fitRationale = `Your profile backs ${backed} of ${mustHaves.length} must-haves and ${shared} of the ${keywords.length} skills this posting names${
+      keywords.length - shared ? ` (not shown: ${keywords.filter((k) => !have.has(k)).slice(0, 4).join(', ')})` : ''
+    }. Check each must-have honestly before applying.`;
   }
 
   return {
@@ -473,11 +473,13 @@ function buildResumeDraft(app: Application, analysis: JdAnalysis, lessons: Memor
   const name = header.name ?? standing.name;
   const contact = header.contact ?? standing.contact;
   const { headline } = header;
-  const prof = profile.toLowerCase();
   const own = `${app.company} ${app.role}`.toLowerCase();
-  const kws = analysis.keywords.filter((k) => !own.includes(k));
-  const have = kws.filter((k) => prof.includes(k));
-  const lacking = kws.filter((k) => !prof.includes(k));
+  const kws = analysis.keywords.filter((k) => !own.includes(k.toLowerCase()));
+  const profileSkills = new Set(skillsIn(profile));
+  const prof = profile.toLowerCase();
+  const shows = (k: string) => profileSkills.has(k) || prof.includes(k.toLowerCase());
+  const have = kws.filter(shows);
+  const lacking = kws.filter((k) => !shows(k));
   const must = analysis.mustHaves.filter((m) => !m.startsWith('(')).slice(0, 4);
   // Each top must-have → the candidate's own line that evidences it, or "not shown".
   const evidence = must.map((m) => {
@@ -488,13 +490,25 @@ function buildResumeDraft(app: Application, analysis: JdAnalysis, lessons: Memor
   });
 
   const fromBank = !profile && bank.some((e) => e.kind === 'role') ? bankAsResumeBody(bank) : '';
-  const body = profile
-    ? profileAsResumeBody(profile, () => false)
+  // Tailored by order, never by wording: in each role the bullets this posting asks about lead, and each
+  // skills line leads with the skills it names. A different job gets a differently ordered resume.
+  const base = profile ? profileAsResumeBody(profile, () => false) : fromBank;
+  const tailored = base ? reorderForJob(base, jobTerms(analysis, STOP), kws) : null;
+  const body = tailored
+    ? tailored.body
     : fromBank ||
       '## Professional Experience\n[fill in: your roles, newest first, one per line as "Title | Company | Dates | Location", each with 2–4 true bullets]\n\n_No profile on file yet. Add your real experience in Settings → Profile, then re-run so Callback can ground the draft in your actual work (it will never invent experience)._';
 
   const notes = [
     `> ⚠️ **Honest draft for ${app.role} @ ${app.company}.** Grounded only in what you've told Callback. Fill each gap with a real detail, or drop it — Callback will never fabricate experience. Notes like these never appear in the PDF/DOCX.`,
+    tailored && tailored.moved
+      ? `> **Tailored for this posting:** in ${tailored.roles} role(s), ${tailored.moved} bullet(s) moved up so what ${app.company} asks for comes first; matching skills lead their lines. Every word is still yours.${
+          tailored.top.length ? `\n> Strongest matches: ${tailored.top.map((t) => `"${t.length > 90 ? `${t.slice(0, 90)}…` : t}"`).join(' · ')}` : ''
+        }`
+      : '',
+    isDemo()
+      ? '> Offline mode reorders your real lines; it never rewrites them. For wording re-angled to this job, add an API key in Settings, or run `/callback:apply` in Claude Code (works on your subscription, no key).'
+      : '',
     lessons.length ? `> Applied ${lessons.length} lesson(s) from your memory while drafting.` : '',
     must.length ? `> **Must-haves → your evidence:**\n${evidence.join('\n')}` : '',
     have.length ? `> Posting keywords your profile already backs: ${have.slice(0, 8).map((k) => `\`${k}\``).join(' ')} — make sure your summary and top bullets say so.` : '',
@@ -528,6 +542,19 @@ _Review every line for truth before you apply. Edit freely — this draft is a s
 /** "You must have 6+ years of X." / "Strong experience with Y is required." → "6+ years of X" / "experience with Y". */
 function requirementPhrase(m: string): string {
   const LEAD = /^(you (must|should|will need to|need to) have|must have|we (require|need|expect)|requires?|required:?|requirements?:?|have|has|are|be|a|an|strong|solid|deep|proven|demonstrated|extensive)\s+/i;
+  // Postings written to the reader ("You've built…", "You don't take shortcuts.") become "someone who…";
+  // only the first sentence, up to a dash, reads well quoted back.
+  const trait = /^you(?:['’]ve| have|['’]re| are| don['’]t| do not)?\s+/i.exec(m.trim());
+  if (trait) {
+    const lead = trait[0].trim().toLowerCase().replace(/’/g, "'");
+    const who = { "you've": 'has', 'you have': 'has', "you're": 'is', 'you are': 'is', "you don't": "doesn't", 'you do not': "doesn't" }[lead] ?? '';
+    let rest = m.trim().slice(trait[0].length).split(/(?<=[.!?])\s+|\s+[-–—]\s+/)[0].replace(/[.!?]$/, '');
+    const already = /^(?:someone|a person|an? \w+) who\s+/i.exec(rest); // "You're someone who cares…" — the verb is already there
+    if (already) rest = rest.slice(already[0].length);
+    const words = rest.split(/\s+/);
+    if (words.length > 14) rest = words.slice(0, 14).join(' ').replace(/,?\s*(?:and|or)?$/, '');
+    return `someone who ${who && !already ? `${who} ` : ''}${rest}`;
+  }
   let s = trimDot(m)
     .replace(/\s+(is|are)\s+(required|a must|essential|mandatory)$/i, '')
     .replace(/\s+\(?required\)?$/i, '')
