@@ -266,6 +266,8 @@ export function extractPosting(html: string, url: URL): { meta: PostingMeta; tex
 interface BoardApi {
   api: string;
   parse: (json: any) => { meta: PostingMeta; text: string } | null;
+  /** A second call that names the employer, when the posting itself doesn't. */
+  company?: { api: string; name: (json: any) => unknown };
 }
 
 const fromHtml = (html: unknown) => htmlToText(decode(String(html ?? ''))).text;
@@ -322,6 +324,183 @@ export function boardApiFor(url: URL): BoardApi | null {
       },
     };
   }
+  // apply.workable.com/<org>/j/<shortcode> — description, requirements and benefits are separate fields.
+  if (host === 'apply.workable.com' && a === 'j' && /^[0-9A-Z]{6,12}$/i.test(b ?? '')) {
+    return {
+      api: `https://apply.workable.com/api/v2/accounts/${encodeURIComponent(org)}/jobs/${b}`,
+      company: { api: `https://apply.workable.com/api/v1/accounts/${encodeURIComponent(org)}`, name: (j) => j?.name },
+      parse: (j) => {
+        if (!j?.title) return null;
+        const where = j.location ? [j.location.city, j.location.region, j.location.country].filter(Boolean).join(', ') : '';
+        const location = j.workplace === 'remote' ? (where ? `Remote · ${where}` : 'Remote') : where || null;
+        const text = [
+          fromHtml(j.description),
+          j.requirements ? `Requirements\n${fromHtml(j.requirements)}` : '',
+          j.benefits ? `Benefits\n${fromHtml(j.benefits)}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n\n');
+        return { meta: meta(j.title, location, j.type ? String(j.type).replace(/^full$/, 'Full-time').replace(/^part$/, 'Part-time') : null, j.published), text };
+      },
+    };
+  }
+  return null;
+}
+
+/** Known board postings this page links to (an "Apply" button, an iframe) — at most a few, page order. */
+export function linkedBoardUrls(html: string, base: URL): URL[] {
+  const out: URL[] = [];
+  const re = /(?:href|src)\s*=\s*["']([^"']+)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) && out.length < 4) {
+    let u: URL;
+    try {
+      u = new URL(decode(m[1]), base);
+    } catch {
+      continue;
+    }
+    // Greenhouse's embedded application iframe: …/embed/job_app?for=<board>&token=<id>
+    const gh = /(?:^|\.)greenhouse\.io$/.test(u.hostname) && /\/embed\/job_app/.test(u.pathname) ? u : null;
+    if (gh && gh.searchParams.get('for') && /^\d+$/.test(gh.searchParams.get('token') ?? '')) {
+      u = new URL(`https://job-boards.greenhouse.io/${gh.searchParams.get('for')}/jobs/${gh.searchParams.get('token')}`);
+    }
+    if (u.href !== base.href && boardApiFor(u) && !out.some((x) => x.href === u.href)) out.push(u);
+  }
+  return out;
+}
+
+// ─── App state: pages built by JavaScript often ship the posting as JSON ────
+// Next.js (__NEXT_DATA__), Nuxt and most single-page career sites embed the
+// data they render in a <script type="application/json"> tag. The posting is
+// the longest prose-like string in there; its sibling "title"/"name" is the role.
+
+export function appStatePosting(html: string): { role: string | null; text: string } | null {
+  const re = /<script[^>]*type\s*=\s*["']application\/(?:json|ld\+json)["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let best: { role: string | null; text: string } | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    if (m[1].length < 400) continue;
+    let data: unknown;
+    try {
+      data = JSON.parse(m[1]);
+    } catch {
+      continue;
+    }
+    const walk = (node: unknown, depth: number): void => {
+      if (depth > 40 || node == null || typeof node !== 'object') return;
+      const obj = node as Record<string, unknown>;
+      for (const [key, v] of Object.entries(obj)) {
+        if (typeof v === 'string' && v.length >= 600 && /description|content|body|text|details|html/i.test(key)) {
+          const text = /<[a-z][\s\S]*>/i.test(v) ? htmlToText(v).text : v.replace(/\r/g, '').trim();
+          // Prose, not a blob: real words and sentence breaks.
+          if (text.length >= 600 && /[.!?:]\s/.test(text) && (text.match(/[a-z]{3,}/gi)?.length ?? 0) > 80 && text.length > (best?.text.length ?? 0)) {
+            const title = obj.title ?? obj.name ?? obj.jobTitle ?? obj.positionName;
+            best = { role: typeof title === 'string' && title.length < 160 ? squash(title) : null, text };
+          }
+        } else if (typeof v === 'object') walk(v, depth + 1);
+      }
+    };
+    walk(data, 0);
+  }
+  return best;
+}
+
+/** The job board behind a URL or page, when we can tell — for an error that says what to do next. */
+export function detectBoard(url: URL, html = ''): string | null {
+  const hay = `${url.hostname} ${url.search} ${html.slice(0, 400_000)}`;
+  const boards: [string, RegExp][] = [
+    ['Ashby', /ashbyhq\.com|ashby_jid/i],
+    ['Greenhouse', /greenhouse\.io|gh_jid/i],
+    ['Lever', /lever\.co/i],
+    ['Workable', /workable\.com/i],
+    ['Workday', /myworkdayjobs\.com|myworkdaysite\.com/i],
+    ['SmartRecruiters', /smartrecruiters\.com/i],
+    ['Personio', /personio\.(?:de|com)/i],
+    ['Recruitee', /recruitee\.com/i],
+    ['Teamtailor', /teamtailor\.com/i],
+    ['SuccessFactors', /successfactors\.(?:com|eu)|jobs\.sap\.com/i],
+    ['iCIMS', /icims\.com/i],
+    ['Taleo', /taleo\.net/i],
+  ];
+  return boards.find(([, re]) => re.test(hay))?.[0] ?? null;
+}
+
+// ─── Boards embedded in a company's own careers page ────────────────────────
+// acme.com/careers?ashby_jid=<uuid> or ?gh_jid=<id> carries the job id but not
+// the board name, and the page itself is an empty shell the embed script fills.
+// The board name usually sits in that embed code; when it doesn't, the domain
+// is a good guess (ashbyhq.com → "ashby"). A candidate only counts if the
+// board's public API actually lists this exact job id, so a guess can never
+// return somebody else's posting.
+
+export interface EmbeddedJob {
+  kind: 'ashby' | 'greenhouse';
+  jobId: string;
+}
+
+export function embeddedJob(url: URL): EmbeddedJob | null {
+  const ashby = url.searchParams.get('ashby_jid');
+  if (ashby && /^[0-9a-f-]{36}$/i.test(ashby)) return { kind: 'ashby', jobId: ashby.toLowerCase() };
+  const gh = url.searchParams.get('gh_jid');
+  if (gh && /^\d+$/.test(gh)) return { kind: 'greenhouse', jobId: gh };
+  return null;
+}
+
+/** Board names in the page's embed code, then guesses from the domain — most likely first. */
+export function boardCandidates(kind: EmbeddedJob['kind'], url: URL, html: string): string[] {
+  const found: string[] = [];
+  const add = (s: string | undefined) => {
+    const b = s ? decodeURIComponent(s).trim() : '';
+    if (b && /^[\w.-]{1,80}$/.test(b) && !found.includes(b)) found.push(b);
+  };
+  let m: RegExpExecArray | null;
+  if (kind === 'ashby') {
+    const re = /jobs\.ashbyhq\.com\/([\w.%-]+)/g;
+    while ((m = re.exec(html))) if (!/^(api|embed|static)$/i.test(m[1])) add(m[1]);
+    const conf = /organizationHostedJobsPageName["'\s:=]+["']([\w.%-]+)["']/g;
+    while ((m = conf.exec(html))) add(m[1]);
+  } else {
+    const re = /(?:job-)?boards(?:\.eu)?\.greenhouse\.io\/(?:embed\/job_board(?:\/js)?\?for=|embed\/job_app\?for=)?([\w.%-]+)/g;
+    while ((m = re.exec(html))) if (!/^(embed|v1|jobs)$/i.test(m[1])) add(m[1]);
+  }
+  // careers.acme-labs.com → acme-labs, acmelabs; ashbyhq.com → ashbyhq, ashby
+  const labels = url.hostname.toLowerCase().replace(/^www\./, '').split('.');
+  const second = labels[labels.length - 2] ?? '';
+  const core = labels.length >= 3 && /^(co|com|org|net|ac|gov|edu)$/.test(second) ? labels[labels.length - 3] : second;
+  if (core) {
+    add(core);
+    add(core.replace(/-/g, ''));
+    add(core.replace(/(hq|careers|jobs|app|inc|labs|io)$/, ''));
+  }
+  return found.slice(0, 6);
+}
+
+/** The board-hosted URL for an embedded job — what boardApiFor already knows how to read. */
+const boardUrl = (job: EmbeddedJob, board: string) =>
+  new URL(
+    job.kind === 'ashby'
+      ? `https://jobs.ashbyhq.com/${encodeURIComponent(board)}/${job.jobId}`
+      : `https://job-boards.greenhouse.io/${encodeURIComponent(board)}/jobs/${job.jobId}`,
+  );
+
+async function fetchEmbedded(url: URL, job: EmbeddedJob): Promise<{ meta: PostingMeta; text: string } | null> {
+  // The company's page may name the board in its embed code, and its own name in og:site_name.
+  let html = '';
+  try {
+    if (await robotsAllows(url)) {
+      const res = await fetch(url, { headers: { 'user-agent': UA, accept: 'text/html' }, redirect: 'follow', signal: AbortSignal.timeout(12000) });
+      if (res.ok) html = (await res.text()).slice(0, 2_000_000);
+    }
+  } catch {
+    /* guesses from the domain still work */
+  }
+  for (const board of boardCandidates(job.kind, url, html)) {
+    const got = await fetchFromBoardApi(boardUrl(job, board));
+    if (!got) continue;
+    const site = metaTags(html)['og:site_name'];
+    const company = (site && !AGGREGATORS.test(site) ? cleanCompany(site) : null) ?? companyFromUrl(url) ?? got.meta.company;
+    return { meta: { ...got.meta, company, companySource: site ? 'meta' : 'url' }, text: got.text };
+  }
   return null;
 }
 
@@ -334,7 +513,16 @@ async function fetchFromBoardApi(url: URL): Promise<{ meta: PostingMeta; text: s
     const res = await fetch(api, { headers: { 'user-agent': UA, accept: 'application/json' }, signal: AbortSignal.timeout(12000) });
     if (!res.ok) return null;
     const got = board.parse(await res.json());
-    return got && got.text.length >= 200 ? got : null;
+    if (!got || got.text.length < 200) return null;
+    if (board.company) {
+      const name = await fetch(board.company.api, { headers: { 'user-agent': UA, accept: 'application/json' }, signal: AbortSignal.timeout(8000) })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => board.company!.name(j))
+        .catch(() => null);
+      const co = typeof name === 'string' ? cleanCompany(name) : null;
+      if (co) got.meta = { ...got.meta, company: co, companySource: 'json-ld' };
+    }
+    return got;
   } catch {
     return null; // fall back to the page itself
   }
@@ -352,7 +540,8 @@ export async function fetchPosting(input: string): Promise<FetchedPosting> {
   if (!/^https?:$/.test(url.protocol)) throw new Error('Only http(s) URLs are supported.');
   if (isPrivateHost(url.hostname)) throw new Error('Refusing to fetch a private/local address.');
 
-  const board = await fetchFromBoardApi(url);
+  const embedded = embeddedJob(url);
+  const board = embedded ? await fetchEmbedded(url, embedded) : await fetchFromBoardApi(url);
   if (board) {
     const { text, flags } = postingGuard(board.text);
     return { ...board.meta, text: text.slice(0, 20000), title: board.meta.role, flags, url: url.toString() };
@@ -371,11 +560,36 @@ export async function fetchPosting(input: string): Promise<FetchedPosting> {
   const ct = res.headers.get('content-type') ?? '';
   const body = await res.text();
   const isHtml = ct.includes('html') || /<html[\s>]/i.test(body);
-  const extracted = isHtml
+  let extracted = isHtml
     ? extractPosting(body, url)
     : { meta: { role: null, company: companyFromUrl(url), location: null, employmentType: null, datePosted: null, companySource: 'url' as const }, text: body };
+
+  // A thin page is usually a JavaScript shell. Before giving up, in order:
+  // the JSON the page ships for its own renderer, then a job board it links to.
+  if (isHtml && extracted.text.length < 600) {
+    const state = appStatePosting(body);
+    if (state && state.text.length > extracted.text.length) {
+      extracted = { meta: { ...extracted.meta, role: extracted.meta.role ?? (state.role ? cleanRole(state.role, extracted.meta.company) : null) }, text: state.text };
+    }
+  }
+  if (isHtml && extracted.text.length < 600) {
+    for (const linked of linkedBoardUrls(body, url)) {
+      const got = await fetchFromBoardApi(linked);
+      if (!got) continue;
+      // The company's own page names the company better than a board slug does.
+      const ownCompany = extracted.meta.companySource && extracted.meta.companySource !== 'url' ? extracted.meta.company : null;
+      extracted = { meta: { ...got.meta, company: ownCompany ?? got.meta.company, companySource: ownCompany ? extracted.meta.companySource : got.meta.companySource }, text: got.text };
+      break;
+    }
+  }
+
   if (extracted.text.length < 200) {
-    throw new Error('Could not extract a posting from that page (it may need JavaScript or a login). Paste the text instead.');
+    const ats = detectBoard(url, isHtml ? body : '');
+    throw new Error(
+      ats
+        ? `This ${ats} page builds the posting with JavaScript, and Callback couldn't reach it through ${ats}'s public data. Open the posting, copy its text, and paste it below — or try the direct ${ats} job link (the "Apply" button usually points to it).`
+        : 'Could not extract a posting from that page (it may need JavaScript or a login). Open it, copy the text, and paste it below.',
+    );
   }
   const { text, flags } = postingGuard(extracted.text);
   return { ...extracted.meta, text: text.slice(0, 20000), title: extracted.meta.role, flags, url: url.toString() };
