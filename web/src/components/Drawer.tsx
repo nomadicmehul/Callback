@@ -6,6 +6,7 @@ import { ActivityFeed } from './Activity';
 import { ArtifactCard } from './ArtifactCard';
 import { MaterialsRow } from './Materials';
 import { RecList } from './Recommendations';
+import { JobMatch } from './JobMatch';
 
 const OUTCOME_STAGES: OutcomeStage[] = ['applied', 'screen', 'interview', 'offer', 'rejected', 'ghosted'];
 const MODE_LABEL: Record<InterviewMode, string> = { behavioral: 'Behavioral', technical: 'Technical', system_design: 'System design' };
@@ -35,6 +36,7 @@ export function ApplicationDrawer({
   const [outStage, setOutStage] = useState<OutcomeStage>('applied');
   const [outDetail, setOutDetail] = useState('');
   const [editing, setEditing] = useState(false);
+  const [showOlder, setShowOlder] = useState(false);
   const [edit, setEdit] = useState({ company: '', role: '', location: '' });
 
   const load = useCallback(() => {
@@ -55,6 +57,14 @@ export function ApplicationDrawer({
   const m = a.materials;
   const drillsDue = detail.drills.filter((d) => d.dueAt <= new Date().toISOString());
   const drillsLater = detail.drills.length - drillsDue.length;
+  // The current version of each document first; every Re-tailor adds new ones, so older versions fold away.
+  const ORDER = ['resume', 'cover_letter', 'interview_prep', 'jd_analysis', 'notes'];
+  const current = ORDER.flatMap((k) => detail.artifacts.find((x) => x.kind === k) ?? []);
+  const older = detail.artifacts.filter((x) => !current.includes(x));
+  const openDoc = (artId: string) => {
+    setOpenArt(artId);
+    setTimeout(() => document.getElementById(`art-${artId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  };
 
   async function setStatus(s: string) {
     await api.setStatus(id, s as any);
@@ -178,6 +188,9 @@ export function ApplicationDrawer({
             </div>
           )}
 
+          {/* The audit at a glance: how the current CV matches this job */}
+          <JobMatch resume={current.find((x) => x.kind === 'resume')} letter={current.find((x) => x.kind === 'cover_letter')} onOpen={openDoc} />
+
           {/* Analysis */}
           {an && (
             <section style={{ marginBottom: 18 }}>
@@ -221,7 +234,7 @@ export function ApplicationDrawer({
               Documents for this job{detail.artifacts.length > 0 && <span className="scrim-note"> · {detail.artifacts.length}</span>}
             </h3>
             {detail.artifacts.length === 0 && <div className="col-empty">No documents yet. Run “Tailor resume + letter”.</div>}
-            {detail.artifacts.map((art) => (
+            {current.map((art) => (
               <ArtifactCard
                 key={art.id}
                 artifact={art}
@@ -233,6 +246,26 @@ export function ApplicationDrawer({
                 }}
               />
             ))}
+            {older.length > 0 && (
+              <button className="btn ghost sm" onClick={() => setShowOlder((v) => !v)} style={{ marginTop: 2 }}>
+                {showOlder ? '▾' : '▸'} Earlier versions ({older.length})
+              </button>
+            )}
+            {showOlder &&
+              older.map((art) => (
+                <div key={art.id} style={{ opacity: 0.75 }}>
+                  <ArtifactCard
+                    artifact={art}
+                    open={openArt === art.id}
+                    onToggle={() => setOpenArt(openArt === art.id ? null : art.id)}
+                    onChanged={() => {
+                      load();
+                      onChanged();
+                    }}
+                    earlier
+                  />
+                </div>
+              ))}
           </section>
 
           {/* Interview prep — this job's own sessions and drills */}

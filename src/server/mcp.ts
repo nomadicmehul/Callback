@@ -361,6 +361,7 @@ export function jobsearchTools(ctx: RunContext) {
           redFlags: args.redFlags,
           fitScore: args.fitScore ?? null,
           fitRationale: args.fitRationale ?? null,
+          source: 'claude',
         };
         setApplicationAnalysis(args.applicationId, analysis);
         const artifact = saveArtifact({

@@ -14,6 +14,7 @@ import { getDocFormat } from './config';
 import { findFontFiles } from './fonts';
 import { FILES_DIR } from './paths';
 import { BRIDGE, FILLER, SPELLING, WEAK_OPENER, buildAudit, matchKeywords } from './audit';
+import { evidenceFor } from './evidence';
 
 export interface Run {
   text: string;
@@ -523,10 +524,16 @@ export async function analyzeAts(input: {
   const missing = match.missing;
   const coverage = kws.length ? match.weighted / kws.length : null;
 
+  // A must-have counts as evidenced by the same rule the drafter uses: enough of its real terms in one
+  // sentence of what's rendered. One shared word ("distributed", "years") proves nothing.
+  const evidenceText = blocks
+    .filter((b) => b.type === 'p' || b.type === 'bullet')
+    .map((b) => b.text)
+    .join('\n');
   const addressed: string[] = [];
   const unaddressed: string[] = [];
   for (const m of (an?.mustHaves ?? []).filter((x) => !x.startsWith('('))) {
-    (sig(m).some((w) => tl.includes(w)) ? addressed : unaddressed).push(m);
+    (evidenceFor(evidenceText, m) ? addressed : unaddressed).push(m);
   }
 
   // Honesty check: numbers in the resume that the profile never mentions.

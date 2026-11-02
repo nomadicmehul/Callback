@@ -82,6 +82,9 @@ src/server/
   jdparse.ts  the offline JD reader: parseJd() splits a posting by its headings (requirements / responsibilities /
               nice-to-have / stack; about-us, benefits, "you should NOT apply if" are skipped) → must-haves, keywords
               from a skills vocabulary; jobTerms() + reorderForJob() = honest offline tailoring (order, not words)
+              JD_READER = the reader's version: offline analyses carry `source: 'offline', reader`; Claude's carry
+              `source: 'claude'`. refreshStaleAnalyses() (engine.ts, run on server and plugin start) re-reads offline ones
+              from an older reader (unstamped = offline only if saved inside a demo run) — bump JD_READER when extraction changes
   coverage.ts experienceCoverage(): what the tracked jobs ask for, grouped across jobs (must-haves + keywords, bare
               keywords fold into the must-have naming them), each marked covered by a story / a CV line / nothing
   backup.ts   exportBackup() → one .zip (VACUUM INTO snapshot of callback.db, config.json without the API key unless
@@ -92,6 +95,8 @@ src/server/
   models.ts   role → model (orchestrator opus-5-5, writer sonnet-5-5, extractor haiku-5-5)
 src/tui/      Ink terminal UI (talks to the server over HTTP + SSE parsed from fetch — Node has no EventSource)
 web/          Vite + React dashboard (views: pipeline, interview, experience, activity, memory, settings)
+              job drawer: JobMatch = the current CV's audit at a glance (score, matches, missing, next steps), current
+              version of each document first, earlier versions folded; opening a CV/letter card runs its audit
 skills/       portable Agent Skills (= the plugin's skills): jd-analyzer, resume-tailor, cover-letter,
               mock-interview, study, retro, setup, apply, outcome, story
 .claude-plugin/plugin.json  plugin manifest (repo root = plugin root)

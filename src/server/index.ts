@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { ensureDataDir } from './paths';
 import { initDb, listPendingApprovals } from './db';
+import { refreshStaleAnalyses } from './engine';
 import { apiRouter } from './routes';
 import { subscribe } from './bus';
 import { hasApiKey } from './config';
@@ -21,6 +22,7 @@ try {
 
 ensureDataDir();
 initDb();
+refreshStaleAnalyses(); // jobs an older offline reader analyzed get today's reading
 
 const app = new Hono();
 app.route('/api', apiRouter());

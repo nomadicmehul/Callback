@@ -28,6 +28,11 @@ import {
   listMemory,
   getArtifact,
   listExperiences,
+  listApplications,
+  listArtifacts,
+  listRunsByApplication,
+  replaceApplicationAnalysis,
+  updateArtifact,
 } from './db';
 import {
   MODE_LABEL,
@@ -44,7 +49,7 @@ import { normalizeEntry } from './resume';
 import { isBulletLine, isHeadingLine, isLabelLine, isRoleLine, parseHeader, reflow } from './cvtext';
 import { bankText, groundTruth } from './experience';
 import { STOP, evidenceFor, firstPerson, hasFigure, storyFor } from './evidence';
-import { jobTerms, parseJd, reorderForJob, skillsIn } from './jdparse';
+import { JD_READER, jobTerms, parseJd, reorderForJob, skillsIn } from './jdparse';
 import { standingAnswers } from './gapsuggest';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -414,7 +419,36 @@ function heuristicAnalysis(app: Application, profile: string): JdAnalysis {
     redFlags,
     fitScore,
     fitRationale,
+    source: 'offline',
+    reader: JD_READER,
   };
+}
+
+/** An analysis the offline reader made, as opposed to one Claude wrote. Older analyses carry no stamp:
+ *  those count as offline only if they were saved during a demo-driver run, so Claude's are never redone. */
+function madeOffline(app: Application): boolean {
+  const an = app.analysis;
+  if (!an || an.source === 'claude') return false;
+  if (an.source === 'offline') return true;
+  const art = listArtifacts(app.id).find((a) => a.kind === 'jd_analysis');
+  if (!art) return false;
+  return listRunsByApplication(app.id).some((r) => r.driver === 'demo' && r.createdAt <= art.createdAt && (!r.finishedAt || art.createdAt <= r.finishedAt));
+}
+
+/** Re-read every job an older offline reader analyzed, so its fit, must-haves and keywords (and every audit
+ *  scored against them) come from today's reader. The drafts stay as they are; Re-tailor redoes those. */
+export function refreshStaleAnalyses(): number {
+  const profile = [getConfig().candidateProfile?.trim() ?? '', bankText(listExperiences('active'))].filter(Boolean).join('\n\n');
+  let n = 0;
+  for (const app of listApplications()) {
+    if (!madeOffline(app) || (app.analysis?.reader ?? 1) >= JD_READER) continue;
+    const analysis = heuristicAnalysis(app, profile);
+    replaceApplicationAnalysis(app.id, analysis);
+    const art = listArtifacts(app.id).find((a) => a.kind === 'jd_analysis');
+    if (art) updateArtifact(art.id, JSON.stringify(analysis, null, 2));
+    n++;
+  }
+  return n;
 }
 
 /** The CV reshaped into the house format the exporter lays out (see skills/resume-tailor):

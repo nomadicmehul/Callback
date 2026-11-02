@@ -9,12 +9,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ensureDataDir } from './server/paths';
 import { initDb, createRun, updateRun } from './server/db';
+import { refreshStaleAnalyses } from './server/engine';
 import { jobsearchTools } from './server/mcp';
 import { emitterForRun } from './server/bus';
 import type { RunContext } from './server/runctx';
 
 ensureDataDir();
 initDb();
+refreshStaleAnalyses(); // jobs an older offline reader analyzed get today's reading
 
 // One "session" run per plugin connection so its activity is recorded alongside
 // the app's own agent runs.
