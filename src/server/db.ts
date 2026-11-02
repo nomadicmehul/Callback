@@ -224,6 +224,11 @@ function migrate(): void {
   } catch {
     /* column already exists */
   }
+  try {
+    db.exec('ALTER TABLE applications ADD COLUMN folder TEXT');
+  } catch {
+    /* column already exists */
+  }
 }
 
 const now = () => new Date().toISOString();
@@ -268,6 +273,7 @@ function rowToApplication(r: any): Application {
     fitScore: r.fit_score ?? null,
     analysis: r.analysis_json ? (JSON.parse(r.analysis_json) as JdAnalysis) : null,
     guardFlags: r.guard_json ? JSON.parse(r.guard_json) : [],
+    folder: r.folder ?? null,
     materials: materialsFor(r.id),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -319,6 +325,38 @@ export function updateApplicationMeta(id: string, patch: { company?: string; rol
 
 export function updateApplicationStatus(id: string, status: ApplicationStatus): void {
   db.prepare('UPDATE applications SET status = ?, updated_at = ? WHERE id = ?').run(status, now(), id);
+}
+
+/** A tailor run may move a job between saved, drafting and ready, but only before it's submitted: once the
+ *  person applied, the stage (applied, interview, offer…) is theirs and a re-tailor leaves it alone. */
+export function setDraftStatus(id: string, status: 'saved' | 'drafting' | 'ready'): void {
+  db.prepare("UPDATE applications SET status = ?, updated_at = ? WHERE id = ? AND status IN ('saved', 'drafting', 'ready')").run(status, now(), id);
+}
+
+/** A run ended (done, declined, failed, interrupted): a job still marked drafting goes back to ready if it
+ *  has a resume, else to saved. */
+export function settleDrafting(id: string): void {
+  const hasResume = !!db.prepare("SELECT 1 FROM artifacts WHERE application_id = ? AND kind = 'resume' LIMIT 1").get(id);
+  db.prepare("UPDATE applications SET status = ?, updated_at = ? WHERE id = ? AND status = 'drafting'").run(hasResume ? 'ready' : 'saved', now(), id);
+}
+
+/** On server start: the dashboard's own runs (demo and Claude) that were mid-flight died with the last
+ *  process. Close them and settle their jobs. Plugin sessions belong to their own process and are left alone;
+ *  pending approvals stay, because approving one saves its draft directly (approvals.ts). */
+export function closeInterruptedRuns(): number {
+  const rows = db
+    .prepare("SELECT id, application_id FROM runs WHERE status IN ('running', 'awaiting_approval') AND driver IN ('demo', 'claude')")
+    .all() as any[];
+  for (const r of rows) {
+    db.prepare("UPDATE runs SET status = 'error', finished_at = ? WHERE id = ?").run(now(), r.id);
+    if (r.application_id) settleDrafting(r.application_id);
+  }
+  return rows.length;
+}
+
+/** Where this job's folder lives, relative to the applications root (folders.ts owns the disk side). */
+export function setApplicationFolder(id: string, folder: string | null): void {
+  db.prepare('UPDATE applications SET folder = ? WHERE id = ?').run(folder, id);
 }
 
 export function setApplicationAnalysis(id: string, analysis: JdAnalysis): void {
