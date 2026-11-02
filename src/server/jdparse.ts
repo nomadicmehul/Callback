@@ -258,11 +258,29 @@ export function reorderForJob(body: string, terms: RegExp[], keywords: string[])
   return { body: out.join('\n'), roles, moved, top };
 }
 
+/** "AWS (EKS, RDS), Kubernetes" → ["AWS (EKS, RDS)", "Kubernetes"]: a comma inside brackets belongs to its
+ *  item, so reordering never moves "Kubernetes" into AWS's parentheses (that would change a fact). */
+export function topLevelItems(s: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let cur = '';
+  for (const ch of s) {
+    if (ch === '(' || ch === '[') depth++;
+    else if (ch === ')' || ch === ']') depth = Math.max(0, depth - 1);
+    if (ch === ',' && depth === 0) {
+      if (cur.trim()) out.push(cur.trim());
+      cur = '';
+    } else cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+
 /** "**Cloud:** Azure, AWS, GCP" → the skills this job names first, the rest in their order. */
 function skillsLine(line: string, keywords: string[]): string {
   const m = /^(\*\*[^*]{1,40}:\*\*\s*)(.+)$/.exec(line);
   if (!m || !keywords.length) return line;
-  const items = m[2].split(/,\s*/);
+  const items = topLevelItems(m[2]);
   if (items.length < 3) return line;
   const wanted = SKILLS.filter(([n]) => keywords.includes(n)).map(([, re]) => re);
   const hit = (s: string) => wanted.some((re) => re.test(s));

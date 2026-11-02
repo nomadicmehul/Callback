@@ -9,8 +9,10 @@ interview prep with scoring and spaced-repetition drills. Repo: https://github.c
 ## Non-negotiables (product principles — never trade these away)
 
 - **Honesty by construction.** Never invent employers, titles, dates, metrics, or skills. Gaps stay
-  visible as `[fill in: …]` placeholders. Export refuses a draft that still has placeholders. The ATS
-  check flags numbers that the profile does not back up.
+  visible as `[fill in: …]` placeholders. Export refuses a draft that still has placeholders, or a role or
+  education line whose employer, school or title the profile doesn't name (`unbackedEntries`). The ATS
+  check flags numbers (whole tokens, years included) that the profile does not back up; `claimsTruth()` =
+  profile + active bank + the person's own gap answers.
 - **Human in the loop.** Agents draft; the human approves every document (resume, cover letter,
   revisions) and submits applications themselves. Callback never auto-submits or sends anything.
 - **Profile first.** Every agent calls `profile_get` before drafting. No profile → honest scaffold.
@@ -45,6 +47,8 @@ src/shared/types.ts     the one source of truth for types (web + server + TUI); 
                         stories.ts = story types + recruiter prompts (dashboard form and /callback:story)
 src/server/
   index.ts    Hono app, SSE /events, serves dist/web, port CALLBACK_PORT (4317)
+  localonly.ts localOnly() on /api/* and /events: loopback Host (DNS rebinding) and no foreign Origin or
+              Sec-Fetch-Site: cross-site (CSRF from any website); no Origin = a local program (TUI, curl)
   routes.ts   REST API under /api (applications, artifacts, interviews, drills, memory, approvals…)
   engine.ts   runs: tailor (analysis → resume → cover letter), retro, mock interview, prep pack; demo + live drivers
   mcp.ts      jobsearchTools(ctx): the tool set shared by the in-process SDK server AND the stdio plugin server
@@ -87,6 +91,12 @@ src/server/
               from an older reader (unstamped = offline only if saved inside a demo run) — bump JD_READER when extraction changes
   coverage.ts experienceCoverage(): what the tracked jobs ask for, grouped across jobs (must-haves + keywords, bare
               keywords fold into the must-have naming them), each marked covered by a story / a CV line / nothing
+  folders.ts  one folder per job: <root>/<Company>/<Role>/ (root = config.applicationsDir, default ~/.callback/applications).
+              Sent PDFs get plain names (Jane_Doe_CV.pdf), DOCX copies name the job; posting.md, application.md,
+              prep-pack.md, audit-cv.md / audit-cover-letter.md. A `.callback.json` marker owns a folder; one without it
+              (the person's own) is never written into → "Role (2)". exportToFolder / saveAudit / syncFolder (full, on
+              export, "Save to folder", outcome `applied`) / refreshFolder (Markdown only, on bus `artifact` events and
+              edits; never rewrites a sent document). Folders are outside the backup and survive a reset.
   backup.ts   exportBackup() → one .zip (VACUUM INTO snapshot of callback.db, config.json without the API key unless
               asked, files/ minus exports, manifest.json); importBackup() writes a safety copy, swaps DB/config/files,
               keeps the local key, re-runs initDb(); resetData('jobs'|'all') backs up first; copies in ~/.callback/backups
@@ -143,8 +153,16 @@ bundled `dist/` even in a checkout. Use a different port per concurrent test ser
   per row in `materialsFor()`; interview sessions carry the pipeline `stage` they were practiced at.
 - Agent SDK: there is **no** `maxBudgetUsd` option; bound runs with `maxTurns` and read
   `result.total_cost_usd`. `canUseTool` returns `{behavior:'allow', updatedInput}` or `{behavior:'deny', message}`.
+- Agent SDK permissions: a tool in `allowedTools` runs **without** calling `canUseTool`, so a write listed
+  there skips the human. Every live run builds its options with `lockedTools(ctx, auto, gated, gate)`
+  (engine.ts): `tools: []` (no shell, files or web), only the named Callback tools on the in-process server,
+  reads in `auto`, writes in `gated` (sent to `gate` → approvals), everything else denied.
 - Approvals: only writes need sign-off (`save_draft` except `interview_prep`, `artifact_update`).
   Reads and `save_jd_analysis` are auto-allowed.
+- Job status: tailor runs only move saved ⇄ drafting ⇄ ready (`setDraftStatus`), and `settleDrafting` ends
+  every run; after "applied" the stage is the person's. A status change to an outcome stage records an outcome.
+  On server start `closeInterruptedRuns()` closes the dashboard's dead runs; a pending approval whose run is
+  gone still works — approving it saves the stored draft (`approvals.ts` applyOrphan).
 - Memory notes: `proposed | active | retired`; agents search ACTIVE notes and only ever *propose*.
 - Document format: `config.json` → `docFormat` (`getDocFormat()` fills defaults; invalid values keep the stored
   one). Renderers take `style`; the default header is name → contact line → bold headline; `headerOrder: 'auto'` keeps the
@@ -215,6 +233,13 @@ Experience bank, round two (done): coverage across tracked jobs ("3 of your 5 ta
 text (untested against a real key), name/contact from gap answers into drafts and `profile_get`, inline PDF preview
 (`download?format=pdf&preview=1`, allowed with gaps, never saved). Still open: project suggestions per coverage gap
 (hook into `resources.ts` once both land), drafts that pick stories per role archetype.
+
+Company folders (done): every job's documents, posting, audits and prep pack in `<Company>/<Role>/`
+(`folders.ts`, Settings → Application folders, the drawer's 📁 row, the `application_folder` tool). Next on this track:
+import a person's existing application folder (applications + bank + claim ledger + voice samples), then the
+application playbook (claim ledger, role-type picker, story rotation, leak check, hook finder, voice profile), then
+memory learning from edits and outcomes. The offline drafter only *counts* memory lessons today (engine.ts
+"Applied N lesson(s)") — structured preferences it can apply are part of the playbook work.
 
 Next, in rough order:
 1. **Live-key test** of the `claude` driver end to end (tailor → ATS loop → cover letter → interview → retro),

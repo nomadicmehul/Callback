@@ -7,6 +7,7 @@ import { ArtifactCard } from './ArtifactCard';
 import { MaterialsRow } from './Materials';
 import { RecList } from './Recommendations';
 import { JobMatch } from './JobMatch';
+import { JobFolder } from './Folders';
 
 const OUTCOME_STAGES: OutcomeStage[] = ['applied', 'screen', 'interview', 'offer', 'rejected', 'ghosted'];
 const MODE_LABEL: Record<InterviewMode, string> = { behavioral: 'Behavioral', technical: 'Technical', system_design: 'System design' };
@@ -150,6 +151,9 @@ export function ApplicationDrawer({
           <div style={{ marginBottom: 14 }}>
             <MaterialsRow m={m} />
           </div>
+
+          {/* Where this job's files live on disk */}
+          <JobFolder applicationId={id} refreshKey={activity.length + detail.outcomes.length + detail.artifacts.length} />
 
           {/* Controls */}
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
