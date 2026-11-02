@@ -61,7 +61,12 @@ src/server/
               sits in — skills-list-only counts 60%), buildAudit() → six weighted categories (Parse 20 · Match 30 ·
               Impact 20 · Brevity 10 · Style 10 · Honesty 10; letters swap Impact for Specificity), gates (placeholders
               cap 40, unreadable text layer 30), verdict, standout; auditMarkdown() = the downloadable report
-  posting.ts  URL → company/role/location/type/date (JSON-LD JobPosting → meta → <title> → board URL) + text
+  posting.ts  URL → company/role/location/type/date (JSON-LD JobPosting → meta → <title> → board URL) + text.
+              fetchPosting() resolver chain: embedded board ids (?ashby_jid / ?gh_jid → board from the embed code or
+              the domain, accepted only if the board's API lists that exact id) → public board APIs (Greenhouse,
+              Lever, Ashby, Workable; never one whose robots.txt says no, e.g. SmartRecruiters) → the page's
+              JSON-LD/meta/text → appStatePosting() (JSON a JS-built page ships, e.g. __NEXT_DATA__) →
+              linkedBoardUrls() (the "Apply" link or Greenhouse iframe) → an error naming the detected board
   guard.ts    postingGuard, htmlToText, robots/private-host checks
   approvals.ts bridge: canUseTool ↔ dashboard (SSE) — requestApproval() resolves when the human clicks
   bus.ts / runctx.ts  event bus + RunContext { runId, applicationId, sessionId?, emit }
