@@ -12,6 +12,7 @@ import { subscribe } from './bus';
 import { watchFolders } from './folders';
 import { hasApiKey } from './config';
 import { APP_VERSION } from './version';
+import { localOnly } from './localonly';
 
 // Zero-dependency .env support (Node loads it into process.env for us).
 try {
@@ -26,6 +27,9 @@ closeInterruptedRuns(); // runs that were mid-flight died with the last server; 
 watchFolders(); // keep each job's folder current as drafts and outcomes land
 
 const app = new Hono();
+// Every API call and the event stream: loopback Host, and no other website's pages.
+app.use('/api/*', localOnly());
+app.use('/events', localOnly());
 app.route('/api', apiRouter());
 
 // ─── Live event stream (SSE) ────────────────────────────────────────────────
