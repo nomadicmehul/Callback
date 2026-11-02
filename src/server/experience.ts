@@ -7,7 +7,7 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { unzipFiles } from './zip';
 import type { Experience, ExperienceInput, ExperienceKind, ImportResult } from '@shared/types';
-import { addExperience, findExperienceDuplicate, listExperiences } from './db';
+import { addExperience, findExperienceDuplicate, listExperiences, listGapAnswers } from './db';
 import { getConfig, resolveApiKey } from './config';
 import { modelFor } from './models';
 import { WORKSPACE_DIR } from './paths';
@@ -55,6 +55,12 @@ export function bankText(entries: Experience[] = listExperiences('active')): str
 /** Everything the candidate has confirmed: their profile text plus the active bank. */
 export function groundTruth(): string {
   return [getConfig().candidateProfile?.trim() ?? '', bankText()].filter(Boolean).join('\n\n');
+}
+
+/** What a claim in a draft is checked against: everything confirmed, plus whatever the person typed into a
+ *  gap (their notice period, a start date: all theirs). */
+export function claimsTruth(): string {
+  return [groundTruth(), ...listGapAnswers().map((a) => a.answer)].filter(Boolean).join('\n');
 }
 
 /** Add imported entries as proposals, skipping anything already in the bank (or discarded). */
@@ -429,8 +435,10 @@ ${clean}`;
       cwd: WORKSPACE_DIR,
       env: { ...process.env, ANTHROPIC_API_KEY: apiKey },
       maxTurns: 1,
+      tools: [], // text in, JSON out: no shell, no files, no web
       allowedTools: [],
       permissionMode: 'default',
+      canUseTool: async () => ({ behavior: 'deny', message: 'No tools in this step.' }),
     };
     for await (const msg of query({ prompt, options }) as any) {
       if (msg?.type === 'result' && typeof msg.result === 'string') out = msg.result;

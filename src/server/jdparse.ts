@@ -134,6 +134,11 @@ export function skillsIn(text: string): string[] {
   return hits.sort((a, b) => b[1] - a[1]).map(([n]) => n);
 }
 
+/** Bump when the reader extracts something different: offline analyses made by an older version are
+ *  re-read on start (engine.ts refreshStaleAnalyses), so old jobs don't keep scoring against stale terms.
+ *  1 = the line-scoring reader before section parsing (unstamped analyses). */
+export const JD_READER = 2;
+
 export function parseJd(text: string, company = ''): JdParts {
   const raw = text.split(/\r?\n/).flatMap((l) => (/•/.test(l) && !BULLET.test(l) ? l.split(/\s*•\s*/) : [l]));
   const buckets: Record<Section, string[]> = { requirements: [], responsibilities: [], nice: [], stack: [], skip: [], intro: [] };
@@ -253,11 +258,29 @@ export function reorderForJob(body: string, terms: RegExp[], keywords: string[])
   return { body: out.join('\n'), roles, moved, top };
 }
 
+/** "AWS (EKS, RDS), Kubernetes" → ["AWS (EKS, RDS)", "Kubernetes"]: a comma inside brackets belongs to its
+ *  item, so reordering never moves "Kubernetes" into AWS's parentheses (that would change a fact). */
+export function topLevelItems(s: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let cur = '';
+  for (const ch of s) {
+    if (ch === '(' || ch === '[') depth++;
+    else if (ch === ')' || ch === ']') depth = Math.max(0, depth - 1);
+    if (ch === ',' && depth === 0) {
+      if (cur.trim()) out.push(cur.trim());
+      cur = '';
+    } else cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+
 /** "**Cloud:** Azure, AWS, GCP" → the skills this job names first, the rest in their order. */
 function skillsLine(line: string, keywords: string[]): string {
   const m = /^(\*\*[^*]{1,40}:\*\*\s*)(.+)$/.exec(line);
   if (!m || !keywords.length) return line;
-  const items = m[2].split(/,\s*/);
+  const items = topLevelItems(m[2]);
   if (items.length < 3) return line;
   const wanted = SKILLS.filter(([n]) => keywords.includes(n)).map(([, re]) => re);
   const hit = (s: string) => wanted.some((re) => re.test(s));
