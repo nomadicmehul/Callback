@@ -461,26 +461,29 @@ export function setMemoryStatus(id: string, status: MemoryStatus): MemoryNote | 
  * (LIKE over content/tags/scope) — good enough until recall becomes a
  * bottleneck, at which point we add embeddings. Returns highest-confidence first.
  */
+/** Active notes relevant to a query. A note scoped to one company, role or stage only comes back for that
+ *  scope (or when the query names it) — a lesson about Acme never shapes a draft for another company. Notes
+ *  for "all" always apply. Confidence only breaks ties. */
 export function searchMemory(queryText: string, scope?: string, limit = 8): MemoryNote[] {
-  const active = listMemory('active');
   const terms = queryText
     .toLowerCase()
     .split(/[^a-z0-9+#.]+/)
     .filter((t) => t.length > 2);
-  const scored = active
+  const inScope = (s: string) => !!scope && (s === scope || (scope.endsWith(':*') && s.startsWith(scope.slice(0, -1))));
+  const named = (s: string) => {
+    const value = s.slice(s.indexOf(':') + 1).toLowerCase();
+    return value.length > 1 && (terms.includes(value) || value.split('-').every((w) => w.length < 3 || terms.includes(w)));
+  };
+  return listMemory('active')
+    .filter((n) => n.scope === 'all' || inScope(n.scope) || named(n.scope) || (!scope && !terms.length))
     .map((note) => {
-      const hay = `${note.content} ${note.tags.join(' ')} ${note.scope}`.toLowerCase();
-      let score = 0;
-      for (const t of terms) if (hay.includes(t)) score += 1;
-      // Scope match is a strong signal.
-      if (scope && (note.scope === scope || note.scope === 'all')) score += 2;
-      score += note.confidence; // tiebreak toward trusted lessons
-      return { note, score };
+      const hay = `${note.content} ${note.tags.join(' ')}`.toLowerCase();
+      const hits = terms.filter((t) => hay.includes(t)).length;
+      return { note, score: hits + (inScope(note.scope) || named(note.scope) ? 2 : 0) + note.confidence };
     })
-    .filter((s) => s.score > 0 || terms.length === 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
-  return scored.map((s) => s.note);
+    .slice(0, limit)
+    .map((s) => s.note);
 }
 
 // ─── Experience bank ────────────────────────────────────────────────────────

@@ -334,26 +334,14 @@ async function demoTailor(ctx: RunContext, app: Application): Promise<string> {
     } else {
       ctx.emit({ type: 'text', text: 'Cover letter discarded — the resume for this job is still saved.' });
     }
-
-    await sleep(300);
-    const note = proposeMemory({
-      kind: 'win',
-      content: `For ${app.role} roles, leading the summary with quantified impact on the top 3 must-haves read strongly.`,
-      scope: `role:${slug(app.role)}`,
-      confidence: 0.4,
-      sourceRunId: ctx.runId,
-      evidence: [`application ${app.id}`],
-      status: 'proposed',
-    });
-    ctx.emit({ type: 'memory_proposed', note });
+    // No lesson yet: nothing has happened with this application. Lessons come from outcomes (the retro).
   } else {
     updateApplicationStatus(app.id, 'saved');
     ctx.emit({ type: 'text', text: 'Draft discarded — nothing saved. Re-run whenever you like.' });
   }
 
-  const cost = coverSaved ? 0.38 : 0.31; // representative estimate for a Haiku+Sonnet tailor pass
-  updateRun(ctx.runId, { costUsd: cost });
-  ctx.emit({ type: 'cost', costUsd: cost });
+  // Offline: no API call, no cost. The event still goes out so demo and live runs read the same.
+  ctx.emit({ type: 'cost', costUsd: 0 });
   return decision === 'allow'
     ? `${coverSaved ? 'Resume + cover letter' : 'Resume'} saved for ${app.role} @ ${app.company} — ready for your review.`
     : 'Run complete — draft discarded.';
@@ -725,7 +713,7 @@ async function demoRetro(ctx: RunContext, app: Application): Promise<string> {
   const positive = last.stage === 'screen' || last.stage === 'interview' || last.stage === 'offer';
   const note = proposeMemory({
     kind: positive ? 'win' : 'lesson',
-    content: retroLesson(last.stage, app),
+    content: retroLesson(last.stage, app, last.detail),
     scope: `role:${slug(app.role)}`,
     confidence: 0.35,
     sourceRunId: ctx.runId,
@@ -734,12 +722,19 @@ async function demoRetro(ctx: RunContext, app: Application): Promise<string> {
   });
   ctx.emit({ type: 'memory_proposed', note });
   ctx.emit({ type: 'text', text: 'One data point is weak evidence, so I kept confidence low. Activate it in Memory only if it matches your own read.' });
-  updateRun(ctx.runId, { costUsd: 0.04 });
-  ctx.emit({ type: 'cost', costUsd: 0.04 });
+  ctx.emit({ type: 'cost', costUsd: 0 });
   return 'Retro complete — one lesson proposed for your review.';
 }
 
-function retroLesson(stage: string, app: Application): string {
+function retroLesson(stage: string, app: Application, detail = ''): string {
+  // What the person wrote about it ("wanted 10+ years and Rust") is the real lesson; keep their words.
+  const why = detail.trim().replace(/\s+/g, ' ').replace(/[.!]+$/, '');
+  if (why && (stage === 'rejected' || stage === 'ghosted')) {
+    return `${app.company} (${app.role}) — ${stage}: "${why.slice(0, 160)}". Before applying to a similar role, check this against your profile and name it honestly in the letter if it's still a gap.`;
+  }
+  if (why && (stage === 'screen' || stage === 'interview' || stage === 'offer')) {
+    return `${app.company} (${app.role}) reached ${stage}: "${why.slice(0, 160)}". Worth repeating for similar roles.`;
+  }
   switch (stage) {
     case 'rejected':
       return `For ${app.role} roles, make sure the top must-haves are evidenced with concrete numbers in the first half of the resume before applying.`;
@@ -954,8 +949,7 @@ async function demoPrep(ctx: RunContext, app: Application): Promise<string> {
   const content = buildPrepPack(app, profile, weaknesses);
   const artifact = saveArtifact({ applicationId: app.id, kind: 'interview_prep', title: `Interview prep — ${app.role} @ ${app.company}`, content });
   ctx.emit({ type: 'artifact', artifact });
-  ctx.emit({ type: 'cost', costUsd: 0.05 });
-  updateRun(ctx.runId, { costUsd: 0.05 });
+  ctx.emit({ type: 'cost', costUsd: 0 });
   return 'Prep pack ready — open it under Documents.';
 }
 
