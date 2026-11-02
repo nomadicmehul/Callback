@@ -11,6 +11,8 @@ export interface StoredConfig {
   profileSource?: ProfileSource;
   /** How exported documents look; missing fields fall back to the defaults. */
   docFormat?: Partial<DocFormat>;
+  /** Where each job's folder goes (<root>/<Company>/<Role>/); unset = ~/.callback/applications. */
+  applicationsDir?: string;
 }
 
 let cache: StoredConfig | null = null;

@@ -53,7 +53,7 @@ Optional one-line scope (team size, platform, what they're accountable for).
 Call `save_draft` with `kind: "resume"` (Callback routes it to the human for approval) or return the tailored resume in markdown. Summarize what you changed and list any gaps you could not honestly cover.
 
 ## Verify like a parser would (in Callback)
-After the draft is saved, call `artifact_ats_check`. It renders the document to PDF, reads the text layer back, and reports parseability, pages, contact details, section headings, posting-keyword coverage, must-haves not evidenced, unfilled placeholders, and **numbers that don't appear in the profile**. Fix only what is genuinely true via `artifact_update` (the user approves edits), re-check once, then `artifact_export` to PDF/DOCX when no placeholders remain. Never add a keyword or a number the candidate's real experience doesn't support.
+After the draft is saved, call `artifact_ats_check`. It renders the document to PDF, reads the text layer back, and reports parseability, pages, contact details, section headings, posting-keyword coverage, must-haves not evidenced, unfilled placeholders, and **numbers that don't appear in the profile**. Fix only what is genuinely true via `artifact_update` (the user approves edits), re-check once, then `artifact_export` to PDF/DOCX when no placeholders remain (it lands in the job's folder). Never add a keyword or a number the candidate's real experience doesn't support.
 
 ## Never
 - Never end a line by bridging to the posting ("— directly transferable to…", "— an X-style pattern"). Let the evidence speak.

@@ -28,12 +28,11 @@ import { postingGuard } from './guard';
 import { fetchPosting } from './posting';
 import { extractProfileText, saveProfileFile } from './profile';
 import { answerDrill, INTERVIEW_MODES } from './interview';
-import { parseResumeMarkdown, renderPdf, analyzeAts, exportArtifact, exportBaseName, findPlaceholders } from './resume';
+import { parseResumeMarkdown, renderPdf, findPlaceholders } from './resume';
 import { auditMarkdown } from './audit';
+import { applicationsRoot, auditOf, cleanRoot, DEFAULT_APPLICATIONS_DIR, exportToFolder, folderInfo, openFolder, refreshFolder, saveAudit, syncFolder } from './folders';
 import { backupFilename, exportBackup, importBackup, listBackups, resetData } from './backup';
-import { FILES_DIR } from './paths';
 import fs from 'node:fs';
-import path from 'node:path';
 import {
   listApplications,
   getApplication,
@@ -57,14 +56,13 @@ import {
   listUpcomingDrills,
   listDrillsByApplication,
   getArtifact,
-  listArtifactsOfKind,
   updateArtifact,
   addExperience,
   listExperiences,
   updateExperience,
   addGapAnswers,
 } from './db';
-import { groundTruth, importFromCv, importGitHub, importLink, importLinkedIn, structureStory, structureStoryLive } from './experience';
+import { importFromCv, importGitHub, importLink, importLinkedIn, structureStory, structureStoryLive } from './experience';
 import { experienceCoverage } from './coverage';
 import { learnFormat } from './cvformat';
 import { suggestGaps } from './gapsuggest';
@@ -112,6 +110,8 @@ export function apiRouter(): Hono {
       candidateProfile: cfg.candidateProfile ?? '',
       profileSource: cfg.profileSource ?? null,
       docFormat: getDocFormat(),
+      applicationsDir: applicationsRoot(),
+      applicationsDirDefault: DEFAULT_APPLICATIONS_DIR,
     });
   });
   api.post('/config', async (c) => {
@@ -127,8 +127,20 @@ export function apiRouter(): Hono {
         : undefined;
     }
     if (body.docFormat && typeof body.docFormat === 'object') patch.docFormat = cleanDocFormat(body.docFormat, getDocFormat());
+    if (typeof body.applicationsDir === 'string') {
+      // Empty = back to the default. Existing folders stay where they are; new saves go to the new place.
+      const dir = body.applicationsDir.trim() ? cleanRoot(body.applicationsDir) : null;
+      if (body.applicationsDir.trim() && !dir) return c.json({ error: 'Use a full path, like ~/Documents/Applications' }, 400);
+      try {
+        fs.mkdirSync(dir ?? DEFAULT_APPLICATIONS_DIR, { recursive: true });
+        fs.accessSync(dir ?? DEFAULT_APPLICATIONS_DIR, fs.constants.W_OK);
+      } catch {
+        return c.json({ error: `Callback can't write to ${dir}` }, 400);
+      }
+      patch.applicationsDir = dir ?? undefined;
+    }
     setConfig(patch);
-    return c.json({ ok: true, hasApiKey: hasApiKey(), hasProfile: hasProfile(), docFormat: getDocFormat() });
+    return c.json({ ok: true, hasApiKey: hasApiKey(), hasProfile: hasProfile(), docFormat: getDocFormat(), applicationsDir: applicationsRoot() });
   });
 
   // ─── Profile (the ground truth for every draft) ──────────────────────────
@@ -246,7 +258,8 @@ export function apiRouter(): Hono {
       location: body.location === null ? null : typeof body.location === 'string' ? body.location : undefined,
     });
     if (!app) return c.json({ error: 'not found' }, 404);
-    return c.json({ application: app });
+    refreshFolder(app.id); // a corrected company or role moves the folder along
+    return c.json({ application: getApplication(app.id) });
   });
 
   api.patch('/applications/:id/status', async (c) => {
@@ -259,7 +272,28 @@ export function apiRouter(): Hono {
     updateApplicationStatus(app.id, status);
     // Moving a job to applied, screen, interview… is an outcome: it belongs on the timeline and in the stats.
     if ((OUTCOME_STAGES as string[]).includes(status)) recordOutcome({ applicationId: app.id, stage: status as OutcomeStage, detail: '' });
+    refreshFolder(app.id);
     return c.json({ ok: true });
+  });
+
+  // ─── This job's folder: <root>/<Company>/<Role>/ ──────────────────────────
+  api.get('/applications/:id/folder', (c) => {
+    const app = getApplication(c.req.param('id'));
+    if (!app) return c.json({ error: 'not found' }, 404);
+    return c.json(folderInfo(app));
+  });
+  api.post('/applications/:id/folder', async (c) => {
+    const app = getApplication(c.req.param('id'));
+    if (!app) return c.json({ error: 'not found' }, 404);
+    return c.json(await syncFolder(app.id));
+  });
+  api.post('/applications/:id/folder/open', (c) => {
+    const app = getApplication(c.req.param('id'));
+    if (!app) return c.json({ error: 'not found' }, 404);
+    const dir = folderInfo(app).path;
+    if (!dir) return c.json({ error: 'Nothing saved for this job yet' }, 404);
+    openFolder(dir);
+    return c.json({ ok: true, path: dir });
   });
 
   api.post('/applications/:id/tailor', (c) => {
@@ -292,6 +326,9 @@ export function apiRouter(): Hono {
     };
     const next = map[outcome.stage];
     if (next) updateApplicationStatus(app.id, next);
+    // Applying files the application: what you're sending goes into its folder now.
+    if (outcome.stage === 'applied') await syncFolder(app.id).catch((err) => console.error('[folders]', err?.message ?? err));
+    else refreshFolder(app.id);
     // Close the loop: every outcome triggers a retro that proposes lessons.
     const runId = startRetroRun(app.id).id;
     return c.json({ outcome, runId });
@@ -381,23 +418,14 @@ export function apiRouter(): Hono {
     if (!content.trim()) return c.json({ error: 'content is required' }, 400);
     const artifact = updateArtifact(c.req.param('id'), content);
     if (!artifact) return c.json({ error: 'not found' }, 404);
+    refreshFolder(artifact.applicationId);
     return c.json({ artifact });
   });
 
   api.post('/artifacts/:id/ats', async (c) => {
     const art = getArtifact(c.req.param('id'));
     if (!art) return c.json({ error: 'not found' }, 404);
-    const app = getApplication(art.applicationId);
-    const pdf = await renderPdf(parseResumeMarkdown(art.content), { title: art.title, kind: art.kind, style: getDocFormat() });
-    const report = await analyzeAts({
-      pdf,
-      source: art.content,
-      application: app,
-      profile: groundTruth(),
-      kind: art.kind,
-      siblings: listArtifactsOfKind(art.kind, art.id).map((a) => a.content),
-    });
-    return c.json({ report });
+    return c.json({ report: await auditOf(art) });
   });
 
   // Suggestions for a draft's gaps — from the person's CV, confirmed experience and earlier answers.
@@ -421,26 +449,15 @@ export function apiRouter(): Hono {
   });
 
   // The audit report: the score, why, and what to do — as JSON + Markdown, or a downloadable .md file
-  // saved next to the exports. Works on scaffolds too (the score is capped, the report says so).
+  // saved in the job's folder. Works on scaffolds too (the score is capped, the report says so).
   api.get('/artifacts/:id/audit', async (c) => {
     const art = getArtifact(c.req.param('id'));
     if (!art) return c.json({ error: 'not found' }, 404);
-    const app = getApplication(art.applicationId);
-    const pdf = await renderPdf(parseResumeMarkdown(art.content), { title: art.title, kind: art.kind, style: getDocFormat() });
-    const report = await analyzeAts({
-      pdf,
-      source: art.content,
-      application: app,
-      profile: groundTruth(),
-      kind: art.kind,
-      siblings: listArtifactsOfKind(art.kind, art.id).map((a) => a.content),
-    });
-    const markdown = auditMarkdown(report, art, app);
-    if (c.req.query('download') !== '1') return c.json({ report, markdown });
-    const filename = `${exportBaseName(art, app)}-audit.md`;
-    const dir = path.join(FILES_DIR, 'exports', app?.id ?? 'misc');
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, filename), markdown);
+    if (c.req.query('download') !== '1') {
+      const report = await auditOf(art);
+      return c.json({ report, markdown: auditMarkdown(report, art, getApplication(art.applicationId)) });
+    }
+    const { markdown, filename } = await saveAudit(art);
     c.header('content-type', 'text/markdown; charset=utf-8');
     c.header('content-disposition', `attachment; filename="${filename}"`);
     return c.body(markdown);
@@ -465,7 +482,7 @@ export function apiRouter(): Hono {
       c.header('content-disposition', 'inline; filename="preview.pdf"');
       return c.body(new Uint8Array(pdf));
     }
-    const { buffer, filename } = await exportArtifact(art, getApplication(art.applicationId), format);
+    const { buffer, filename } = await exportToFolder(art, format);
     c.header('content-type', format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     c.header('content-disposition', `attachment; filename="${filename}"`);
     return c.body(new Uint8Array(buffer));

@@ -25,34 +25,20 @@ import {
   listDueDrills,
 } from './db';
 import { scheduleDrill, completeSession, recordDrillResult, INTERVIEW_MODES, DIMENSIONS } from './interview';
-import { addExperience, getArtifact, listArtifactsOfKind, listExperiences, updateArtifact } from './db';
+import { addExperience, getArtifact, listExperiences, updateArtifact } from './db';
 import { bankText, groundTruth, importFromCv, importGitHub, importLink } from './experience';
 import { standingAnswers } from './gapsuggest';
 import { coverageText, experienceCoverage } from './coverage';
-import { parseResumeMarkdown, renderPdf, analyzeAts, summarizeAts, exportArtifact, exportBaseName, findPlaceholders } from './resume';
+import { summarizeAts, findPlaceholders } from './resume';
 import { auditMarkdown } from './audit';
+import { auditOf, exportToFolder, folderInfo, refreshFolder, saveAudit, syncFolder } from './folders';
 import { recommendationsText, studyText, type DimResult } from './resources';
 import { BACKUPS_DIR, exportBackup, importBackup } from './backup';
-import { FILES_DIR } from './paths';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const ok = (text: string) => ({ content: [{ type: 'text' as const, text }] });
 const RO = { annotations: { readOnlyHint: true } };
-
-/** Render → read back → score, the same way the dashboard does it. */
-async function auditOf(art: Artifact) {
-  const app = getApplication(art.applicationId);
-  const pdf = await renderPdf(parseResumeMarkdown(art.content), { title: art.title, kind: art.kind, style: getDocFormat() });
-  return analyzeAts({
-    pdf,
-    source: art.content,
-    application: app,
-    profile: groundTruth(),
-    kind: art.kind,
-    siblings: listArtifactsOfKind(art.kind, art.id).map((a) => a.content),
-  });
-}
 
 // The agents' ONLY door to the user's data — a deliberate least-privilege
 // boundary (no raw filesystem/DB access). The same tool list powers the
@@ -411,8 +397,10 @@ export function jobsearchTools(ctx: RunContext) {
         if (!app) return ok(`No application found with id ${args.applicationId}.`);
         recordOutcome({ applicationId: app.id, stage: args.stage as OutcomeStage, detail: args.detail });
         updateApplicationStatus(app.id, args.stage as ApplicationStatus);
+        // Applying files the application: what is being sent goes into its folder now.
+        const filed = args.stage === 'applied' ? await syncFolder(app.id).then((r) => ` Saved its documents to ${r.path}.`, () => '') : (refreshFolder(app.id), '');
         return ok(
-          `Recorded "${args.stage}" for ${app.role} @ ${app.company}. One data point is weak evidence — if you propose a lesson, keep confidence ≤ 0.5.`,
+          `Recorded "${args.stage}" for ${app.role} @ ${app.company}.${filed} One data point is weak evidence — if you propose a lesson, keep confidence ≤ 0.5.`,
         );
       },
     ),
@@ -433,18 +421,13 @@ export function jobsearchTools(ctx: RunContext) {
     ),
     tool(
       'artifact_audit',
-      "The full audit report for a drafted document as Markdown — score, verdict, what stands out, every category's strengths and findings, keywords, must-haves, numbers to verify, and how the score works. With save: true it is also written next to the exports as <role-company-kind>-audit.md and the path returned. Show it to the user; never edit a document to chase the score with words that aren't true.",
+      "The full audit report for a drafted document as Markdown — score, verdict, what stands out, every category's strengths and findings, keywords, must-haves, numbers to verify, and how the score works. With save: true it is also written into the job's folder as audit-cv.md / audit-cover-letter.md and the path returned. Show it to the user; never edit a document to chase the score with words that aren't true.",
       { artifactId: z.string(), save: z.boolean().default(false) },
       async (args) => {
         const art = getArtifact(args.artifactId);
         if (!art) return ok(`No artifact ${args.artifactId}.`);
-        const app = getApplication(art.applicationId);
-        const markdown = auditMarkdown(await auditOf(art), art, app);
-        if (!args.save) return ok(markdown);
-        const dir = path.join(FILES_DIR, 'exports', app?.id ?? 'misc');
-        fs.mkdirSync(dir, { recursive: true });
-        const filePath = path.join(dir, `${exportBaseName(art, app)}-audit.md`);
-        fs.writeFileSync(filePath, markdown);
+        if (!args.save) return ok(auditMarkdown(await auditOf(art), art, getApplication(art.applicationId)));
+        const { markdown, filePath } = await saveAudit(art);
         return ok(`Saved to ${filePath}\n\n${markdown}`);
       },
       RO,
@@ -462,15 +445,32 @@ export function jobsearchTools(ctx: RunContext) {
     ),
     tool(
       'artifact_export',
-      'Export a drafted document to an ATS-friendly PDF or DOCX (single column, real text layer). Refuses while [fill in: …] placeholders remain. Returns the saved file path on the user\'s machine.',
+      'Export a drafted document to an ATS-friendly PDF or DOCX (single column, real text layer) into the job\'s folder (<applications root>/<Company>/<Role>/): the PDF to send has a plain name (Jane_Doe_CV.pdf), the DOCX names the job. Refuses while [fill in: …] placeholders remain. Returns the saved file path on the user\'s machine.',
       { artifactId: z.string(), format: z.enum(['pdf', 'docx']).default('pdf') },
       async (args) => {
         const art = getArtifact(args.artifactId);
         if (!art) return ok(`No artifact ${args.artifactId}.`);
         const ph = findPlaceholders(art.content);
         if (ph.length) return ok(`Not exported — ${ph.length} placeholder(s) remain: ${ph.join(', ')}. Fill them with real details (artifact_update) first.`);
-        const { filePath } = await exportArtifact(art, getApplication(art.applicationId), args.format);
+        const { filePath } = await exportToFolder(art, args.format);
         return ok(`Exported to ${filePath}`);
+      },
+    ),
+    tool(
+      'application_folder',
+      "This job's folder on the user's machine (<applications root>/<Company>/<Role>/). With save: true, writes everything it has: the latest resume and cover letter as PDF + DOCX with their audits (only documents with no [fill in: …] gaps left), the posting as captured, the prep pack and a status summary, and says what was left out and why. Without save it lists what is already there. Tell the user the path; they open and send the files themselves.",
+      { applicationId: z.string(), save: z.boolean().default(true) },
+      async (args) => {
+        const app = getApplication(args.applicationId);
+        if (!app) return ok(`No application found with id ${args.applicationId}.`);
+        if (!args.save) {
+          const info = folderInfo(app);
+          return ok(info.path ? `${info.path}\n${info.files.map((f) => `- ${f.name}`).join('\n') || '(empty)'}` : `Nothing saved yet for ${app.role} @ ${app.company}. Applications root: ${info.root}`);
+        }
+        const r = await syncFolder(app.id);
+        return ok(
+          [`Saved to ${r.path}`, ...r.written.map((f) => `- ${f}`), ...r.skipped.map((s) => `Not written: ${s.file} — ${s.reason}`)].join('\n'),
+        );
       },
     ),
 

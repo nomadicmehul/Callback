@@ -84,6 +84,12 @@ src/server/
               from a skills vocabulary; jobTerms() + reorderForJob() = honest offline tailoring (order, not words)
   coverage.ts experienceCoverage(): what the tracked jobs ask for, grouped across jobs (must-haves + keywords, bare
               keywords fold into the must-have naming them), each marked covered by a story / a CV line / nothing
+  folders.ts  one folder per job: <root>/<Company>/<Role>/ (root = config.applicationsDir, default ~/.callback/applications).
+              Sent PDFs get plain names (Jane_Doe_CV.pdf), DOCX copies name the job; posting.md, application.md,
+              prep-pack.md, audit-cv.md / audit-cover-letter.md. A `.callback.json` marker owns a folder; one without it
+              (the person's own) is never written into → "Role (2)". exportToFolder / saveAudit / syncFolder (full, on
+              export, "Save to folder", outcome `applied`) / refreshFolder (Markdown only, on bus `artifact` events and
+              edits; never rewrites a sent document). Folders are outside the backup and survive a reset.
   backup.ts   exportBackup() → one .zip (VACUUM INTO snapshot of callback.db, config.json without the API key unless
               asked, files/ minus exports, manifest.json); importBackup() writes a safety copy, swaps DB/config/files,
               keeps the local key, re-runs initDb(); resetData('jobs'|'all') backs up first; copies in ~/.callback/backups
@@ -214,6 +220,13 @@ Experience bank, round two (done): coverage across tracked jobs ("3 of your 5 ta
 text (untested against a real key), name/contact from gap answers into drafts and `profile_get`, inline PDF preview
 (`download?format=pdf&preview=1`, allowed with gaps, never saved). Still open: project suggestions per coverage gap
 (hook into `resources.ts` once both land), drafts that pick stories per role archetype.
+
+Company folders (done): every job's documents, posting, audits and prep pack in `<Company>/<Role>/`
+(`folders.ts`, Settings → Application folders, the drawer's 📁 row, the `application_folder` tool). Next on this track:
+import a person's existing application folder (applications + bank + claim ledger + voice samples), then the
+application playbook (claim ledger, role-type picker, story rotation, leak check, hook finder, voice profile), then
+memory learning from edits and outcomes. The offline drafter only *counts* memory lessons today (engine.ts
+"Applied N lesson(s)") — structured preferences it can apply are part of the playbook work.
 
 Next, in rough order:
 1. **Live-key test** of the `claude` driver end to end (tailor → ATS loop → cover letter → interview → retro),

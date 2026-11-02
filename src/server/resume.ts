@@ -3,8 +3,6 @@
 // parsers need), then read the PDF *back* and verify it the way an ATS would.
 // Pure JS throughout — no LaTeX, no native modules.
 
-import fs from 'node:fs';
-import path from 'node:path';
 import PDFDocument from 'pdfkit';
 import { AlignmentType, BorderStyle, Document, HeadingLevel, Packer, Paragraph, Tab, TabStopType, TextRun } from 'docx';
 import type { Application, Artifact, ArtifactKind, AtsReport } from '@shared/types';
@@ -12,7 +10,6 @@ import { findGaps } from '@shared/placeholders';
 import { DEFAULT_DOC_FORMAT, type DocFormat } from '@shared/types';
 import { getDocFormat } from './config';
 import { findFontFiles } from './fonts';
-import { FILES_DIR } from './paths';
 import { BRIDGE, FILLER, SPELLING, WEAK_OPENER, buildAudit, matchKeywords } from './audit';
 
 export interface Run {
@@ -37,8 +34,6 @@ export const STOP = new Set(
 
 /** Gaps the human still has to fill — placeholders quoted in editorial notes don't count. */
 export const findPlaceholders = (md: string): string[] => findGaps(md).map((g) => g.token);
-
-const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
 
 // ─── Markdown → blocks ──────────────────────────────────────────────────────
 
@@ -437,27 +432,14 @@ export async function renderDocx(blocks: Block[], opts: { title: string; kind?: 
   return Buffer.from(await Packer.toBuffer(doc));
 }
 
-// ─── Export to disk ─────────────────────────────────────────────────────────
+// ─── Render for export ──────────────────────────────────────────────────────
 
-export async function exportArtifact(
-  art: Artifact,
-  app: Application | null,
-  format: 'pdf' | 'docx',
-): Promise<{ buffer: Buffer; filename: string; filePath: string }> {
+/** The document as the file you send. Writing it to disk is folders.ts's job (one folder per job). */
+export async function renderArtifact(art: Artifact, format: 'pdf' | 'docx'): Promise<Buffer> {
   const blocks = parseResumeMarkdown(art.content);
-  const filename = `${exportBaseName(art, app)}.${format}`;
   const opts = { title: art.title, kind: art.kind, style: getDocFormat() };
-  const buffer = format === 'pdf' ? await renderPdf(blocks, opts) : await renderDocx(blocks, opts);
-  const dir = path.join(FILES_DIR, 'exports', app?.id ?? 'misc');
-  fs.mkdirSync(dir, { recursive: true });
-  const filePath = path.join(dir, filename);
-  fs.writeFileSync(filePath, buffer);
-  return { buffer, filename, filePath };
+  return format === 'pdf' ? renderPdf(blocks, opts) : renderDocx(blocks, opts);
 }
-
-/** "senior-platform-engineer-northwind-cloud-resume" — shared by exports and the audit file. */
-export const exportBaseName = (art: Artifact, app: Application | null) =>
-  slug([app?.role, app?.company, art.kind.replace('_', '-')].filter(Boolean).join('-')) || art.kind;
 
 // ─── ATS verification: read the PDF back the way a parser would ─────────────
 

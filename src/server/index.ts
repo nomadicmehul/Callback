@@ -9,6 +9,7 @@ import { ensureDataDir } from './paths';
 import { closeInterruptedRuns, initDb, listPendingApprovals } from './db';
 import { apiRouter } from './routes';
 import { subscribe } from './bus';
+import { watchFolders } from './folders';
 import { hasApiKey } from './config';
 import { APP_VERSION } from './version';
 
@@ -22,6 +23,7 @@ try {
 ensureDataDir();
 initDb();
 closeInterruptedRuns(); // runs that were mid-flight died with the last server; their approvals still work
+watchFolders(); // keep each job's folder current as drafts and outcomes land
 
 const app = new Hono();
 app.route('/api', apiRouter());

@@ -224,6 +224,11 @@ function migrate(): void {
   } catch {
     /* column already exists */
   }
+  try {
+    db.exec('ALTER TABLE applications ADD COLUMN folder TEXT');
+  } catch {
+    /* column already exists */
+  }
 }
 
 const now = () => new Date().toISOString();
@@ -268,6 +273,7 @@ function rowToApplication(r: any): Application {
     fitScore: r.fit_score ?? null,
     analysis: r.analysis_json ? (JSON.parse(r.analysis_json) as JdAnalysis) : null,
     guardFlags: r.guard_json ? JSON.parse(r.guard_json) : [],
+    folder: r.folder ?? null,
     materials: materialsFor(r.id),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -346,6 +352,9 @@ export function closeInterruptedRuns(): number {
     if (r.application_id) settleDrafting(r.application_id);
   }
   return rows.length;
+/** Where this job's folder lives, relative to the applications root (folders.ts owns the disk side). */
+export function setApplicationFolder(id: string, folder: string | null): void {
+  db.prepare('UPDATE applications SET folder = ? WHERE id = ?').run(folder, id);
 }
 
 export function setApplicationAnalysis(id: string, analysis: JdAnalysis): void {
