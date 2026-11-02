@@ -352,6 +352,8 @@ export function closeInterruptedRuns(): number {
     if (r.application_id) settleDrafting(r.application_id);
   }
   return rows.length;
+}
+
 /** Where this job's folder lives, relative to the applications root (folders.ts owns the disk side). */
 export function setApplicationFolder(id: string, folder: string | null): void {
   db.prepare('UPDATE applications SET folder = ? WHERE id = ?').run(folder, id);
