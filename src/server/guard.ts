@@ -5,7 +5,9 @@
 // a posting we strip invisible characters, drop instruction-shaped lines, and
 // surface exactly what we removed so the user can see it.
 
-const INVISIBLE = /[​-‏⁠-⁤﻿­‪-‮]/g;
+// Zero-width and bidi controls, soft hyphen, the Mongolian vowel separator, variation selectors, and
+// Unicode tag characters (U+E0000–E007F): invisible on screen, read by a model as text ("ASCII smuggling").
+const INVISIBLE = /[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFE00-\uFE0F\uFEFF\u{E0000}-\u{E007F}\u{E0100}-\u{E01EF}]/gu;
 
 const INJECTION_PATTERNS: { re: RegExp; label: string }[] = [
   { re: /ignore\s+(all\s+)?(the\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|rules|context)/i, label: 'instruction override' },
@@ -16,7 +18,48 @@ const INJECTION_PATTERNS: { re: RegExp; label: string }[] = [
   { re: /\b(this|the)\s+(candidate|applicant)\s+is\s+(a\s+)?(perfect|ideal|excellent|strong)\s+(fit|match)\b/i, label: 'screener manipulation' },
   { re: /\bdo\s+not\s+(tell|mention|reveal|disclose)\b/i, label: 'concealment instruction' },
   { re: /\b(ai|llm|language\s+model|bot)\s+(reading|processing|screening|reviewing|parsing)\s+this\b/i, label: 'AI-targeted text' },
+  // "SYSTEM: …", "Assistant: …" — a line dressed up as a chat turn
+  { re: /^\s*[\[(<]?\s*(system|assistant)\s*[\])>]?\s*:/i, label: 'role-tagged instruction' },
+  { re: /\b(developer|god|jailbreak|dan|unrestricted)\s+mode\b|\bjailbreak\b/i, label: 'mode switch' },
+  { re: /\b(new|updated|real|actual|hidden)\s+instructions?\s*:/i, label: 'instruction override' },
+  // "you must advance this candidate" — but not "you will recommend the right tools" (a real responsibility)
+  { re: /\b(assistant|model|ai|you)\s+(must|should|shall|will|are\s+to)\s+(recommend|rate|score|hire|approve|advance|shortlist|praise)\s+(?:(?:this|the)\s+(?:candidate|applicant|resume|cv|person)|him|her|them)\b/i, label: 'screener manipulation' },
+  { re: /\brecommend\s+(?:to\s+)?hir(?:e|ing)\b/i, label: 'screener manipulation' },
+  { re: /\b(output|give|assign|return)\s+(a\s+|an\s+)?(\d{2,3}\s*(\/\s*100)?|perfect|maximum|top)\s*(score|rating)\b/i, label: 'screener manipulation' },
 ];
+
+/** A flag's quote: whole words, never cut mid-word. */
+const quote = (line: string) => {
+  const t = line.trim();
+  return t.length <= 70 ? t : `${t.slice(0, 70).replace(/\s+\S*$/, '')}…`;
+};
+
+// Elements a browser wouldn't show: display:none, visibility:hidden, zero font size or opacity, the
+// hidden attribute, aria-hidden. Pasted HTML keeps them; their text is for a model, not a person.
+const HIDDEN_ELEMENT =
+  /<(\w+)\b[^>]*?(?:style\s*=\s*["'][^"']*(?:display\s*:\s*none|visibility\s*:\s*hidden|font-size\s*:\s*0(?![.\d]*[1-9])|opacity\s*:\s*0(?![.\d]*[1-9]))[^"']*["']|\shidden(?=[\s>/=])|aria-hidden\s*=\s*["']true["'])[^>]*>[\s\S]*?<\/\1\s*>/gi;
+
+/** Drop hidden elements from HTML, counting them. */
+export function stripHidden(html: string): { html: string; hidden: number } {
+  let hidden = 0;
+  let out = html;
+  for (let pass = 0; pass < 3; pass++) {
+    const next = out.replace(HIDDEN_ELEMENT, () => (hidden++, ' '));
+    if (next === out) break;
+    out = next;
+  }
+  return { html: out, hidden };
+}
+
+/** A posting's company, role or location: one line, no invisibles, capped — and nothing that reads as an
+ *  instruction (null then, so the caller falls back to what the person typed or "Unknown"). */
+export function guardField(raw: string | null | undefined, max = 160): string | null {
+  if (!raw) return null;
+  const { text } = normalizeText(String(raw).replace(/<[^>]+>/g, ' '));
+  const line = text.replace(/\s+/g, ' ').trim();
+  if (!line || INJECTION_PATTERNS.some((p) => p.re.test(line))) return null;
+  return line.length <= max ? line : line.slice(0, max).replace(/\s+\S*$/, '');
+}
 
 export interface GuardResult {
   text: string;
@@ -40,14 +83,21 @@ export function normalizeText(raw: string): { text: string; invisibleCount: numb
 /** Clean an untrusted posting: strip invisibles, remove injection-shaped lines. */
 export function postingGuard(raw: string): GuardResult {
   const flags: string[] = [];
-  const { text: normalized, invisibleCount } = normalizeText(raw);
+  // Pasted HTML: what a browser hides goes first, then the markup itself.
+  let input = raw;
+  if (/<[a-z][^>]*>/i.test(raw)) {
+    const { html, hidden } = stripHidden(raw);
+    if (hidden) flags.push(`removed ${hidden} hidden HTML element(s) (text a reader never sees)`);
+    input = htmlToText(html).text;
+  }
+  const { text: normalized, invisibleCount } = normalizeText(input);
   if (invisibleCount > 0) flags.push(`stripped ${invisibleCount} invisible character(s) (hidden-text trick)`);
 
   const kept: string[] = [];
   for (const line of normalized.split('\n')) {
     const hit = INJECTION_PATTERNS.find((p) => p.re.test(line));
     if (hit) {
-      if (flags.length < 12) flags.push(`removed ${hit.label}: "${line.trim().slice(0, 70)}"`);
+      if (flags.length < 12) flags.push(`removed ${hit.label}: "${quote(line)}"`);
       continue;
     }
     kept.push(line);
@@ -71,7 +121,7 @@ function decodeEntities(s: string): string {
 
 export function htmlToText(html: string): { text: string; title: string | null } {
   const titleRaw = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1]?.trim() ?? null;
-  let h = html;
+  let h = stripHidden(html).html;
   // Prefer the main content region when the page marks one.
   const main = /<main[\s\S]*?<\/main>/i.exec(h)?.[0] ?? /<article[\s\S]*?<\/article>/i.exec(h)?.[0];
   if (main && main.length > 500) h = main;
