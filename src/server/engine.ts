@@ -11,7 +11,8 @@ import {
   createRun,
   updateRun,
   getApplication,
-  updateApplicationStatus,
+  setDraftStatus,
+  settleDrafting,
   setApplicationAnalysis,
   saveArtifact,
   searchMemory,
@@ -67,7 +68,7 @@ export function startTailorRun(applicationId: string): Run {
   const run = createRun({ applicationId, kind: 'tailor', driver });
   const ctx: RunContext = { runId: run.id, applicationId, emit: emitterForRun(run.id) };
 
-  updateApplicationStatus(app.id, 'drafting');
+  setDraftStatus(app.id, 'drafting');
   ctx.emit({ type: 'status', status: 'running', note: `Tailor run started (${driver} mode)` });
 
   void (async () => {
@@ -82,9 +83,8 @@ export function startTailorRun(applicationId: string): Run {
       ctx.emit({ type: 'error', message: String(err?.message ?? err) });
       ctx.emit({ type: 'status', status: 'error' });
     } finally {
-      // If the run ended without saving anything, don't strand the app in "drafting".
-      const fresh = getApplication(app.id);
-      if (fresh && fresh.status === 'drafting') updateApplicationStatus(app.id, 'saved');
+      // However the run ended, don't strand the job in "drafting".
+      settleDrafting(app.id);
     }
   })();
 
@@ -293,11 +293,11 @@ async function demoTailor(ctx: RunContext, app: Application): Promise<string> {
       title: `Resume — ${app.role} @ ${app.company}`,
       content: draft,
     });
-    updateApplicationStatus(app.id, 'ready');
+    setDraftStatus(app.id, 'ready');
     ctx.emit({ type: 'artifact', artifact });
     ctx.emit({
       type: 'text',
-      text: 'Resume saved for this job. Status → ready. Edit it anytime in the dashboard, then submit on the company site yourself.',
+      text: 'Resume saved for this job. Edit it anytime in the dashboard, then submit on the company site yourself.',
     });
 
     // Stage 4 — cover-letter (Sonnet). Its own approval: declining the letter
@@ -347,7 +347,7 @@ async function demoTailor(ctx: RunContext, app: Application): Promise<string> {
     });
     ctx.emit({ type: 'memory_proposed', note });
   } else {
-    updateApplicationStatus(app.id, 'saved');
+    settleDrafting(app.id);
     ctx.emit({ type: 'text', text: 'Draft discarded — nothing saved. Re-run whenever you like.' });
   }
 

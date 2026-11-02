@@ -140,6 +140,10 @@ bundled `dist/` even in a checkout. Use a different port per concurrent test ser
   `result.total_cost_usd`. `canUseTool` returns `{behavior:'allow', updatedInput}` or `{behavior:'deny', message}`.
 - Approvals: only writes need sign-off (`save_draft` except `interview_prep`, `artifact_update`).
   Reads and `save_jd_analysis` are auto-allowed.
+- Job status: tailor runs only move saved ⇄ drafting ⇄ ready (`setDraftStatus`), and `settleDrafting` ends
+  every run; after "applied" the stage is the person's. A status change to an outcome stage records an outcome.
+  On server start `closeInterruptedRuns()` closes the dashboard's dead runs; a pending approval whose run is
+  gone still works — approving it saves the stored draft (`approvals.ts` applyOrphan).
 - Memory notes: `proposed | active | retired`; agents search ACTIVE notes and only ever *propose*.
 - Document format: `config.json` → `docFormat` (`getDocFormat()` fills defaults; invalid values keep the stored
   one). Renderers take `style`; the default header is name → contact line → bold headline; `headerOrder: 'auto'` keeps the

@@ -6,7 +6,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { ensureDataDir } from './paths';
-import { initDb, listPendingApprovals } from './db';
+import { closeInterruptedRuns, initDb, listPendingApprovals } from './db';
 import { apiRouter } from './routes';
 import { subscribe } from './bus';
 import { hasApiKey } from './config';
@@ -21,6 +21,7 @@ try {
 
 ensureDataDir();
 initDb();
+closeInterruptedRuns(); // runs that were mid-flight died with the last server; their approvals still work
 
 const app = new Hono();
 app.route('/api', apiRouter());

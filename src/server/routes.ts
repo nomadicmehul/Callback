@@ -11,6 +11,7 @@ import type {
   OutcomeStage,
   ResetScope,
 } from '@shared/types';
+import { APPLICATION_STATUSES } from '@shared/types';
 import { APP_VERSION } from './version';
 import { DATA_DIR, PLUGIN_DIR } from './paths';
 import { cleanDocFormat, getConfig, getDocFormat, setConfig, hasApiKey, hasProfile } from './config';
@@ -69,6 +70,8 @@ import { learnFormat } from './cvformat';
 import { suggestGaps } from './gapsuggest';
 import { gapKind } from '@shared/placeholders';
 
+const OUTCOME_STAGES: OutcomeStage[] = ['applied', 'screen', 'interview', 'offer', 'rejected', 'ghosted'];
+const MEMORY_STATUSES: MemoryStatus[] = ['proposed', 'active', 'retired'];
 const EXPERIENCE_KINDS: ExperienceKind[] = ['story', 'role', 'project', 'education', 'certification', 'link'];
 const EXPERIENCE_STATUSES: ExperienceStatus[] = ['proposed', 'active', 'archived'];
 const EXPERIENCE_SOURCES: ExperienceSource[] = ['manual', 'quick', 'gap', 'cv', 'linkedin', 'github', 'link', 'agent'];
@@ -250,7 +253,12 @@ export function apiRouter(): Hono {
     const app = getApplication(c.req.param('id'));
     if (!app) return c.json({ error: 'not found' }, 404);
     const body = await c.req.json().catch(() => ({}));
-    updateApplicationStatus(app.id, body.status as ApplicationStatus);
+    const status = body.status as ApplicationStatus;
+    if (!APPLICATION_STATUSES.includes(status)) return c.json({ error: `status must be one of: ${APPLICATION_STATUSES.join(', ')}` }, 400);
+    if (status === app.status) return c.json({ ok: true });
+    updateApplicationStatus(app.id, status);
+    // Moving a job to applied, screen, interview… is an outcome: it belongs on the timeline and in the stats.
+    if ((OUTCOME_STAGES as string[]).includes(status)) recordOutcome({ applicationId: app.id, stage: status as OutcomeStage, detail: '' });
     return c.json({ ok: true });
   });
 
@@ -264,10 +272,15 @@ export function apiRouter(): Hono {
     const app = getApplication(c.req.param('id'));
     if (!app) return c.json({ error: 'not found' }, 404);
     const body = await c.req.json().catch(() => ({}));
+    if (!(OUTCOME_STAGES as string[]).includes(body.stage)) return c.json({ error: `stage must be one of: ${OUTCOME_STAGES.join(', ')}` }, 400);
+    // Logged later than it happened? A date ("2026-10-28") or timestamp is kept as when it happened.
+    const when = typeof body.occurredAt === 'string' && !Number.isNaN(Date.parse(body.occurredAt)) ? new Date(body.occurredAt).toISOString() : undefined;
+    if (when && when > new Date().toISOString()) return c.json({ error: 'occurredAt is in the future' }, 400);
     const outcome = recordOutcome({
       applicationId: app.id,
       stage: body.stage as OutcomeStage,
       detail: String(body.detail ?? ''),
+      occurredAt: when,
     });
     const map: Partial<Record<OutcomeStage, ApplicationStatus>> = {
       applied: 'applied',
@@ -355,6 +368,7 @@ export function apiRouter(): Hono {
   );
   api.post('/memory/:id/status', async (c) => {
     const body = await c.req.json().catch(() => ({}));
+    if (!MEMORY_STATUSES.includes(body.status)) return c.json({ error: `status must be one of: ${MEMORY_STATUSES.join(', ')}` }, 400);
     const note = setMemoryStatus(c.req.param('id'), body.status as MemoryStatus);
     if (!note) return c.json({ error: 'not found' }, 404);
     return c.json({ note });
