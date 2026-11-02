@@ -8,7 +8,7 @@
 //   4. The URL itself: known boards put the employer in the host or path.
 // Everything here is still UNTRUSTED input — the text goes through postingGuard.
 
-import { htmlToText, postingGuard, robotsAllows, isPrivateHost, UA } from './guard';
+import { guardField, htmlToText, postingGuard, robotsAllows, isPrivateHost, UA } from './guard';
 
 export type CompanySource = 'json-ld' | 'meta' | 'title' | 'url';
 
@@ -544,7 +544,8 @@ export async function fetchPosting(input: string): Promise<FetchedPosting> {
   const board = embedded ? await fetchEmbedded(url, embedded) : await fetchFromBoardApi(url);
   if (board) {
     const { text, flags } = postingGuard(board.text);
-    return { ...board.meta, text: text.slice(0, 20000), title: board.meta.role, flags, url: url.toString() };
+    const meta = guardMeta(board.meta);
+    return { ...meta, text: text.slice(0, 20000), title: meta.role, flags, url: url.toString() };
   }
 
   if (!(await robotsAllows(url))) {
@@ -592,5 +593,11 @@ export async function fetchPosting(input: string): Promise<FetchedPosting> {
     );
   }
   const { text, flags } = postingGuard(extracted.text);
-  return { ...extracted.meta, text: text.slice(0, 20000), title: extracted.meta.role, flags, url: url.toString() };
+  const meta = guardMeta(extracted.meta);
+  return { ...meta, text: text.slice(0, 20000), title: meta.role, flags, url: url.toString() };
+}
+
+/** The page's own company, role and location are untrusted too: they reach prompts and approval titles. */
+function guardMeta<T extends { company: string | null; role: string | null; location: string | null }>(meta: T): T {
+  return { ...meta, company: guardField(meta.company, 120), role: guardField(meta.role), location: guardField(meta.location) };
 }

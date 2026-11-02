@@ -24,7 +24,7 @@ import {
   endInterviewSession,
   startPrepRun,
 } from './engine';
-import { postingGuard } from './guard';
+import { guardField, postingGuard } from './guard';
 import { fetchPosting } from './posting';
 import { extractProfileText, saveProfileFile } from './profile';
 import { answerDrill, INTERVIEW_MODES } from './interview';
@@ -204,7 +204,7 @@ export function apiRouter(): Hono {
     let flags: string[] = [];
     let fetchedRole: string | null = null;
     let fetchedCompany: string | null = null;
-    let location: string | null = body.location ? String(body.location).trim() || null : null;
+    let location: string | null = guardField(body.location);
 
     if (!jdText && jdUrl) {
       try {
@@ -225,8 +225,8 @@ export function apiRouter(): Hono {
     if (!jdText) return c.json({ error: 'Paste a job description or provide a URL.' }, 400);
 
     const app = createApplication({
-      company: String(body.company ?? '').trim() || fetchedCompany || 'Unknown company',
-      role: String(body.role ?? '').trim() || fetchedRole || 'Unknown role',
+      company: guardField(body.company, 120) || fetchedCompany || 'Unknown company',
+      role: guardField(body.role) || fetchedRole || 'Unknown role',
       jdText,
       jdUrl,
       location,
