@@ -11,10 +11,12 @@ import { ensureDataDir } from './server/paths';
 import { initDb, createRun, updateRun } from './server/db';
 import { jobsearchTools } from './server/mcp';
 import { emitterForRun } from './server/bus';
+import { watchFolders } from './server/folders';
 import type { RunContext } from './server/runctx';
 
 ensureDataDir();
 initDb();
+watchFolders(); // keep each job's folder current as drafts and outcomes land
 
 // One "session" run per plugin connection so its activity is recorded alongside
 // the app's own agent runs.
@@ -45,6 +47,10 @@ const finish = () => {
   }
 };
 process.on('exit', finish);
+// Claude Code ends the plugin with a signal or by closing stdin; 'exit' alone doesn't fire for a signal,
+// and an unfinished session run blocks backup import and reset.
+for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) process.on(sig, () => process.exit(0));
+process.stdin.on('end', () => process.exit(0));
 
 await server.connect(new StdioServerTransport());
 console.error(`[callback] jobsearch MCP server ready (stdio, session ${run.id})`);
