@@ -11,23 +11,40 @@ export interface StoredConfig {
   profileSource?: ProfileSource;
   /** How exported documents look; missing fields fall back to the defaults. */
   docFormat?: Partial<DocFormat>;
+  /** Where each job's folder goes (<root>/<Company>/<Role>/); unset = ~/.callback/applications. */
+  applicationsDir?: string;
 }
 
 let cache: StoredConfig | null = null;
+let cachedMtime = 0;
 
+/** The dashboard and the Claude Code plugin are two processes sharing this file: re-read it whenever the
+ *  other one wrote it, so a save here never writes back a stale copy over their change. */
 function read(): StoredConfig {
-  if (cache) return cache;
+  let mtime = 0;
+  try {
+    mtime = fs.statSync(CONFIG_PATH).mtimeMs;
+  } catch {
+    /* no file yet */
+  }
+  if (cache && mtime === cachedMtime) return cache;
   try {
     cache = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) as StoredConfig;
   } catch {
     cache = {};
   }
+  cachedMtime = mtime;
   return cache;
 }
 
 function write(cfg: StoredConfig): void {
   cache = cfg;
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), { mode: 0o600 });
+  try {
+    cachedMtime = fs.statSync(CONFIG_PATH).mtimeMs;
+  } catch {
+    cachedMtime = 0;
+  }
   // Tighten perms even if the file already existed with looser ones.
   try {
     fs.chmodSync(CONFIG_PATH, 0o600);

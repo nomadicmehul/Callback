@@ -224,6 +224,11 @@ function migrate(): void {
   } catch {
     /* column already exists */
   }
+  try {
+    db.exec('ALTER TABLE applications ADD COLUMN folder TEXT');
+  } catch {
+    /* column already exists */
+  }
 }
 
 const now = () => new Date().toISOString();
@@ -268,6 +273,7 @@ function rowToApplication(r: any): Application {
     fitScore: r.fit_score ?? null,
     analysis: r.analysis_json ? (JSON.parse(r.analysis_json) as JdAnalysis) : null,
     guardFlags: r.guard_json ? JSON.parse(r.guard_json) : [],
+    folder: r.folder ?? null,
     materials: materialsFor(r.id),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -319,6 +325,38 @@ export function updateApplicationMeta(id: string, patch: { company?: string; rol
 
 export function updateApplicationStatus(id: string, status: ApplicationStatus): void {
   db.prepare('UPDATE applications SET status = ?, updated_at = ? WHERE id = ?').run(status, now(), id);
+}
+
+/** A tailor run may move a job between saved, drafting and ready, but only before it's submitted: once the
+ *  person applied, the stage (applied, interview, offer…) is theirs and a re-tailor leaves it alone. */
+export function setDraftStatus(id: string, status: 'saved' | 'drafting' | 'ready'): void {
+  db.prepare("UPDATE applications SET status = ?, updated_at = ? WHERE id = ? AND status IN ('saved', 'drafting', 'ready')").run(status, now(), id);
+}
+
+/** A run ended (done, declined, failed, interrupted): a job still marked drafting goes back to ready if it
+ *  has a resume, else to saved. */
+export function settleDrafting(id: string): void {
+  const hasResume = !!db.prepare("SELECT 1 FROM artifacts WHERE application_id = ? AND kind = 'resume' LIMIT 1").get(id);
+  db.prepare("UPDATE applications SET status = ?, updated_at = ? WHERE id = ? AND status = 'drafting'").run(hasResume ? 'ready' : 'saved', now(), id);
+}
+
+/** On server start: the dashboard's own runs (demo and Claude) that were mid-flight died with the last
+ *  process. Close them and settle their jobs. Plugin sessions belong to their own process and are left alone;
+ *  pending approvals stay, because approving one saves its draft directly (approvals.ts). */
+export function closeInterruptedRuns(): number {
+  const rows = db
+    .prepare("SELECT id, application_id FROM runs WHERE status IN ('running', 'awaiting_approval') AND driver IN ('demo', 'claude')")
+    .all() as any[];
+  for (const r of rows) {
+    db.prepare("UPDATE runs SET status = 'error', finished_at = ? WHERE id = ?").run(now(), r.id);
+    if (r.application_id) settleDrafting(r.application_id);
+  }
+  return rows.length;
+}
+
+/** Where this job's folder lives, relative to the applications root (folders.ts owns the disk side). */
+export function setApplicationFolder(id: string, folder: string | null): void {
+  db.prepare('UPDATE applications SET folder = ? WHERE id = ?').run(folder, id);
 }
 
 export function setApplicationAnalysis(id: string, analysis: JdAnalysis): void {
@@ -461,26 +499,29 @@ export function setMemoryStatus(id: string, status: MemoryStatus): MemoryNote | 
  * (LIKE over content/tags/scope) — good enough until recall becomes a
  * bottleneck, at which point we add embeddings. Returns highest-confidence first.
  */
+/** Active notes relevant to a query. A note scoped to one company, role or stage only comes back for that
+ *  scope (or when the query names it) — a lesson about Acme never shapes a draft for another company. Notes
+ *  for "all" always apply. Confidence only breaks ties. */
 export function searchMemory(queryText: string, scope?: string, limit = 8): MemoryNote[] {
-  const active = listMemory('active');
   const terms = queryText
     .toLowerCase()
     .split(/[^a-z0-9+#.]+/)
     .filter((t) => t.length > 2);
-  const scored = active
+  const inScope = (s: string) => !!scope && (s === scope || (scope.endsWith(':*') && s.startsWith(scope.slice(0, -1))));
+  const named = (s: string) => {
+    const value = s.slice(s.indexOf(':') + 1).toLowerCase();
+    return value.length > 1 && (terms.includes(value) || value.split('-').every((w) => w.length < 3 || terms.includes(w)));
+  };
+  return listMemory('active')
+    .filter((n) => n.scope === 'all' || inScope(n.scope) || named(n.scope) || (!scope && !terms.length))
     .map((note) => {
-      const hay = `${note.content} ${note.tags.join(' ')} ${note.scope}`.toLowerCase();
-      let score = 0;
-      for (const t of terms) if (hay.includes(t)) score += 1;
-      // Scope match is a strong signal.
-      if (scope && (note.scope === scope || note.scope === 'all')) score += 2;
-      score += note.confidence; // tiebreak toward trusted lessons
-      return { note, score };
+      const hay = `${note.content} ${note.tags.join(' ')}`.toLowerCase();
+      const hits = terms.filter((t) => hay.includes(t)).length;
+      return { note, score: hits + (inScope(note.scope) || named(note.scope) ? 2 : 0) + note.confidence };
     })
-    .filter((s) => s.score > 0 || terms.length === 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
-  return scored.map((s) => s.note);
+    .slice(0, limit)
+    .map((s) => s.note);
 }
 
 // ─── Experience bank ────────────────────────────────────────────────────────
