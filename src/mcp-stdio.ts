@@ -11,10 +11,12 @@ import { ensureDataDir } from './server/paths';
 import { initDb, createRun, updateRun } from './server/db';
 import { jobsearchTools } from './server/mcp';
 import { emitterForRun } from './server/bus';
+import { watchFolders } from './server/folders';
 import type { RunContext } from './server/runctx';
 
 ensureDataDir();
 initDb();
+watchFolders(); // keep each job's folder current as drafts and outcomes land
 
 // One "session" run per plugin connection so its activity is recorded alongside
 // the app's own agent runs.

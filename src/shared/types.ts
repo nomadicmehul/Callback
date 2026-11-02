@@ -57,6 +57,8 @@ export interface Application {
   analysis: JdAnalysis | null;
   /** What the posting guard removed from the JD (injection attempts, hidden text). */
   guardFlags: string[];
+  /** This job's folder under the applications root ("Grafana Labs/Staff SRE"); null until something was saved there. */
+  folder: string | null;
   /** What exists for THIS job: its own documents and its own interview history. */
   materials: ApplicationMaterials;
   createdAt: string;
@@ -340,6 +342,24 @@ export interface HealthInfo {
   dataDir: string;
   /** What to pass to `claude --plugin-dir`: the package root as typed in a shell ("~/Callback"), when it ships the plugin manifest. */
   pluginDir: string | null;
+}
+
+// ─── Application folders ────────────────────────────────────────────────────
+
+/** One folder per job — <root>/<Company>/<Role>/ — with what was sent, the posting, the audit and the prep pack. */
+export interface FolderInfo {
+  /** The applications root (Settings → Application folders). */
+  root: string;
+  /** This job's folder; null until something was saved there. */
+  path: string | null;
+  files: { name: string; size: number; modifiedAt: string }[];
+}
+
+export interface FolderSync {
+  path: string;
+  written: string[];
+  /** What was left out and why — a document with gaps is never written. */
+  skipped: { file: string; reason: string }[];
 }
 
 // ─── Backup, restore, start fresh ───────────────────────────────────────────
