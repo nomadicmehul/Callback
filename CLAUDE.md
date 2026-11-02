@@ -79,6 +79,9 @@ src/server/
   experience.ts experience bank: imports (CV, LinkedIn ZIP via node:zlib, GitHub API, a public link), quick-add
               structuring (heuristic; structureStoryLive() uses Haiku when a key is set and drops any result with a
               number the person didn't type), bankText()/groundTruth() — what drafts, profile_get and the honesty check read
+  jdparse.ts  the offline JD reader: parseJd() splits a posting by its headings (requirements / responsibilities /
+              nice-to-have / stack; about-us, benefits, "you should NOT apply if" are skipped) → must-haves, keywords
+              from a skills vocabulary; jobTerms() + reorderForJob() = honest offline tailoring (order, not words)
   coverage.ts experienceCoverage(): what the tracked jobs ask for, grouped across jobs (must-haves + keywords, bare
               keywords fold into the must-have naming them), each marked covered by a story / a CV line / nothing
   backup.ts   exportBackup() → one .zip (VACUUM INTO snapshot of callback.db, config.json without the API key unless
@@ -151,7 +154,10 @@ bundled `dist/` even in a checkout. Use a different port per concurrent test ser
   Weakness notes are scoped `stage:<mode>` with `tags = [dimensionKey]`.
 - Hono `serveStatic` roots are cwd-relative, so the launcher always spawns the server with `cwd = repo root`.
 - Node ≥ 22.13 (unflagged `node:sqlite`). `NODE_OPTIONS=--disable-warning=ExperimentalWarning` is set by the launcher.
-- Ports: server 4317, Vite 5317. Demo keyword/STOP lists live in `engine.ts` and `resume.ts`.
+- Ports: server 4317, Vite 5317. STOP lists live in `evidence.ts` and `resume.ts`; the offline JD reader and the
+  skills vocabulary (display name → pattern) live in `jdparse.ts` — add a skill there, not as a stop-word elsewhere.
+- Offline tailoring changes order, never wording: `reorderForJob()` moves each role's bullets by relevance to the
+  posting and leads skills lines with the skills it names. Rewriting per job needs the live driver or the plugin.
 - Don't `console.log` in `src/mcp-stdio.ts` — stdout is the MCP channel; use stderr.
 
 ## Git rules (from the owner)
