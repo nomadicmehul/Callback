@@ -11,7 +11,8 @@ import {
   createRun,
   updateRun,
   getApplication,
-  updateApplicationStatus,
+  setDraftStatus,
+  settleDrafting,
   setApplicationAnalysis,
   saveArtifact,
   searchMemory,
@@ -67,7 +68,7 @@ export function startTailorRun(applicationId: string): Run {
   const run = createRun({ applicationId, kind: 'tailor', driver });
   const ctx: RunContext = { runId: run.id, applicationId, emit: emitterForRun(run.id) };
 
-  updateApplicationStatus(app.id, 'drafting');
+  setDraftStatus(app.id, 'drafting');
   ctx.emit({ type: 'status', status: 'running', note: `Tailor run started (${driver} mode)` });
 
   void (async () => {
@@ -82,9 +83,8 @@ export function startTailorRun(applicationId: string): Run {
       ctx.emit({ type: 'error', message: String(err?.message ?? err) });
       ctx.emit({ type: 'status', status: 'error' });
     } finally {
-      // If the run ended without saving anything, don't strand the app in "drafting".
-      const fresh = getApplication(app.id);
-      if (fresh && fresh.status === 'drafting') updateApplicationStatus(app.id, 'saved');
+      // However the run ended, don't strand the job in "drafting".
+      settleDrafting(app.id);
     }
   })();
 
@@ -92,6 +92,35 @@ export function startTailorRun(applicationId: string): Run {
 }
 
 // ─── Live driver (Claude Agent SDK) ─────────────────────────────────────────
+
+type Permission = { behavior: 'allow'; updatedInput: Record<string, unknown> } | { behavior: 'deny'; message: string };
+
+/** What one live run may touch. Only the Callback tools it names reach the model, and none of the SDK's
+ *  built-ins (no shell, no files, no web): a posting that talks the model into something has nothing to use.
+ *  `auto` tools run without asking (reads, and writes that only propose). `gated` tools are NOT in
+ *  allowedTools — the SDK runs those without calling canUseTool — so each call reaches `gate`, which asks
+ *  the human. Anything else is refused. */
+export function lockedTools(
+  ctx: RunContext,
+  auto: string[],
+  gated: string[] = [],
+  gate?: (tool: string, input: Record<string, unknown>) => Promise<Permission>,
+) {
+  const full = (t: string) => `mcp__jobsearch__${t}`;
+  const open = new Set(auto.map(full));
+  const ask = new Set(gated.map(full));
+  return {
+    mcpServers: { jobsearch: buildJobsearchServer(ctx, [...auto, ...gated]) },
+    tools: [] as string[],
+    allowedTools: [...open],
+    permissionMode: 'default',
+    canUseTool: async (toolName: string, input: Record<string, unknown>): Promise<Permission> => {
+      if (open.has(toolName)) return { behavior: 'allow', updatedInput: input };
+      if (ask.has(toolName) && gate) return gate(toolName, input);
+      return { behavior: 'deny', message: `${toolName} isn't available in this run.` };
+    },
+  };
+}
 
 const SYSTEM_PROMPT = `You are Callback, an honest, local-first job-search assistant working for one person (the user) on their own machine.
 
@@ -110,8 +139,6 @@ async function claudeTailor(ctx: RunContext, app: Application): Promise<string> 
   const model = modelFor('writer');
   ctx.emit({ type: 'agent', agent: 'resume-tailor', model });
 
-  const server = buildJobsearchServer(ctx);
-
   const prompt = `Tailor materials for application ${app.id}.
 
 Steps — in this order:
@@ -127,51 +154,43 @@ Steps — in this order:
 Company: ${app.company}
 Role: ${app.role}`;
 
+  // Every resume and cover letter goes to the human (new drafts AND agent revisions); a prep pack is for their eyes only.
+  const signOff = async (toolName: string, input: Record<string, unknown>): Promise<Permission> => {
+    const isUpdate = toolName === 'mcp__jobsearch__artifact_update';
+    const kind = isUpdate
+      ? (getArtifact(String((input as any).artifactId ?? ''))?.kind ?? 'document')
+      : String((input as any).kind ?? 'draft');
+    if ((toolName === 'mcp__jobsearch__save_draft' && kind !== 'interview_prep') || isUpdate) {
+      updateRun(ctx.runId, { status: 'awaiting_approval' });
+      ctx.emit({ type: 'status', status: 'awaiting_approval', note: 'Waiting for your review' });
+      const decision = await requestApproval({
+        runId: ctx.runId,
+        applicationId: app.id,
+        tool: toolName,
+        title: `${isUpdate ? 'Revise' : 'Save'} ${kind.replace('_', ' ')} for ${app.role} @ ${app.company}`,
+        input,
+      });
+      updateRun(ctx.runId, { status: 'running' });
+      ctx.emit({ type: 'status', status: 'running' });
+      return decision === 'allow'
+        ? { behavior: 'allow', updatedInput: input }
+        : { behavior: 'deny', message: 'The user declined to save this draft. You may revise and try again, or stop.' };
+    }
+    return { behavior: 'allow', updatedInput: input };
+  };
   const options: any = {
     model,
     systemPrompt: SYSTEM_PROMPT,
-    mcpServers: { jobsearch: server },
-    allowedTools: [
-      'mcp__jobsearch__profile_get',
-      'mcp__jobsearch__application_get',
-      'mcp__jobsearch__memory_search',
-      'mcp__jobsearch__save_jd_analysis',
-      'mcp__jobsearch__save_draft',
-      'mcp__jobsearch__artifact_ats_check',
-      'mcp__jobsearch__artifact_update',
-      'mcp__jobsearch__memory_propose',
-    ],
+    ...lockedTools(
+      ctx,
+      ['profile_get', 'application_get', 'memory_search', 'save_jd_analysis', 'artifact_ats_check', 'memory_propose'],
+      ['save_draft', 'artifact_update'],
+      signOff,
+    ),
     settingSources: [], // ignore ambient CLAUDE.md / user settings
     cwd: WORKSPACE_DIR,
     env: { ...process.env, ANTHROPIC_API_KEY: apiKey },
     maxTurns: 32,
-    permissionMode: 'default',
-    canUseTool: async (toolName: string, input: Record<string, unknown>) => {
-      // Only drafts need the human's sign-off; reads and the JD analysis are auto-allowed.
-      // Resumes and cover letters go to the human (new drafts AND agent revisions);
-      // a prep pack is for the user's eyes only.
-      const isUpdate = toolName === 'mcp__jobsearch__artifact_update';
-      const kind = isUpdate
-        ? (getArtifact(String((input as any).artifactId ?? ''))?.kind ?? 'document')
-        : String((input as any).kind ?? 'draft');
-      if ((toolName === 'mcp__jobsearch__save_draft' && kind !== 'interview_prep') || isUpdate) {
-        updateRun(ctx.runId, { status: 'awaiting_approval' });
-        ctx.emit({ type: 'status', status: 'awaiting_approval', note: 'Waiting for your review' });
-        const decision = await requestApproval({
-          runId: ctx.runId,
-          applicationId: app.id,
-          tool: toolName,
-          title: `${isUpdate ? 'Revise' : 'Save'} ${kind.replace('_', ' ')} for ${app.role} @ ${app.company}`,
-          input,
-        });
-        updateRun(ctx.runId, { status: 'running' });
-        ctx.emit({ type: 'status', status: 'running' });
-        return decision === 'allow'
-          ? { behavior: 'allow', updatedInput: input }
-          : { behavior: 'deny', message: 'The user declined to save this draft. You may revise and try again, or stop.' };
-      }
-      return { behavior: 'allow', updatedInput: input };
-    },
   };
 
   let summary = 'Tailor run complete.';
@@ -293,11 +312,11 @@ async function demoTailor(ctx: RunContext, app: Application): Promise<string> {
       title: `Resume — ${app.role} @ ${app.company}`,
       content: draft,
     });
-    updateApplicationStatus(app.id, 'ready');
+    setDraftStatus(app.id, 'ready');
     ctx.emit({ type: 'artifact', artifact });
     ctx.emit({
       type: 'text',
-      text: 'Resume saved for this job. Status → ready. Edit it anytime in the dashboard, then submit on the company site yourself.',
+      text: 'Resume saved for this job. Edit it anytime in the dashboard, then submit on the company site yourself.',
     });
 
     // Stage 4 — cover-letter (Sonnet). Its own approval: declining the letter
@@ -336,7 +355,7 @@ async function demoTailor(ctx: RunContext, app: Application): Promise<string> {
     }
     // No lesson yet: nothing has happened with this application. Lessons come from outcomes (the retro).
   } else {
-    updateApplicationStatus(app.id, 'saved');
+    settleDrafting(app.id);
     ctx.emit({ type: 'text', text: 'Draft discarded — nothing saved. Re-run whenever you like.' });
   }
 
@@ -673,19 +692,11 @@ async function claudeRetro(ctx: RunContext, app: Application): Promise<string> {
   const options: any = {
     model,
     systemPrompt: SYSTEM_PROMPT,
-    mcpServers: { jobsearch: buildJobsearchServer(ctx) },
-    allowedTools: [
-      'mcp__jobsearch__profile_get',
-      'mcp__jobsearch__application_get',
-      'mcp__jobsearch__memory_search',
-      'mcp__jobsearch__memory_propose',
-    ],
+    ...lockedTools(ctx, ['profile_get', 'application_get', 'memory_search', 'memory_propose']),
     settingSources: [],
     cwd: WORKSPACE_DIR,
     env: { ...process.env, ANTHROPIC_API_KEY: apiKey },
     maxTurns: 12,
-    permissionMode: 'default',
-    canUseTool: async (_tool: string, input: Record<string, unknown>) => ({ behavior: 'allow', updatedInput: input }),
   };
   for await (const msg of query({ prompt, options }) as any) {
     translateMessage(ctx, msg);
@@ -884,20 +895,11 @@ ${transcript || '(none)'}`;
   const options: any = {
     model,
     systemPrompt: SYSTEM_PROMPT,
-    mcpServers: { jobsearch: buildJobsearchServer(ctx) },
-    allowedTools: [
-      'mcp__jobsearch__profile_get',
-      'mcp__jobsearch__application_get',
-      'mcp__jobsearch__memory_search',
-      'mcp__jobsearch__interview_score',
-      'mcp__jobsearch__interview_ask',
-    ],
+    ...lockedTools(ctx, ['profile_get', 'application_get', 'memory_search', 'interview_score', 'interview_ask']),
     settingSources: [],
     cwd: WORKSPACE_DIR,
     env: { ...process.env, ANTHROPIC_API_KEY: apiKey },
     maxTurns: 10,
-    permissionMode: 'default',
-    canUseTool: async (_tool: string, input: Record<string, unknown>) => ({ behavior: 'allow', updatedInput: input }),
   };
   for await (const msg of query({ prompt, options }) as any) {
     translateMessage(ctx, msg);
@@ -971,20 +973,16 @@ async function claudePrep(ctx: RunContext, app: Application): Promise<string> {
   const options: any = {
     model,
     systemPrompt: SYSTEM_PROMPT,
-    mcpServers: { jobsearch: buildJobsearchServer(ctx) },
-    allowedTools: [
-      'mcp__jobsearch__profile_get',
-      'mcp__jobsearch__application_get',
-      'mcp__jobsearch__study_resources',
-      'mcp__jobsearch__memory_search',
-      'mcp__jobsearch__save_draft',
-    ],
+    // A prep run saves its prep pack and nothing else; a resume or letter needs the tailor run's sign-off.
+    ...lockedTools(ctx, ['profile_get', 'application_get', 'study_resources', 'memory_search'], ['save_draft'], async (_tool, input) =>
+      input.kind === 'interview_prep'
+        ? { behavior: 'allow', updatedInput: input }
+        : { behavior: 'deny', message: 'A prep run only saves kind "interview_prep".' },
+    ),
     settingSources: [],
     cwd: WORKSPACE_DIR,
     env: { ...process.env, ANTHROPIC_API_KEY: apiKey },
     maxTurns: 14,
-    permissionMode: 'default',
-    canUseTool: async (_tool: string, input: Record<string, unknown>) => ({ behavior: 'allow', updatedInput: input }),
   };
   for await (const msg of query({ prompt, options }) as any) {
     translateMessage(ctx, msg);

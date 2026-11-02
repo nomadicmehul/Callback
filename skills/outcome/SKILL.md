@@ -11,7 +11,7 @@ Every outcome is a data point for what actually gets *this* person callbacks.
 
 ## Procedure
 1. Identify the application. If unclear, call `applications_list` and ask which one.
-2. Call `outcome_record` with the stage (`applied` | `screen` | `interview` | `offer` | `rejected` | `ghosted`) and any detail the user shared (e.g. a debrief, feedback, who they spoke to).
+2. Call `outcome_record` with the stage (`applied` | `screen` | `interview` | `offer` | `rejected` | `ghosted`) and any detail the user shared (e.g. a debrief, feedback, who they spoke to). Logging `applied` also saves the job's documents into its folder; tell the user where (the tool's reply has the path).
 3. **Retro** — follow the `retro` skill: gather the application, its analysis, the materials used (`application_get`), and what's already known (`memory_search`). Look for a pattern, not noise.
 4. Propose at most **two** one-sentence lessons via `memory_propose`:
    - `kind`: `lesson` (what to do/avoid), `win` (what worked), `weakness` (interview gap to drill), or `preference`.
