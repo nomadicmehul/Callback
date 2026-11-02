@@ -3,8 +3,6 @@
 // parsers need), then read the PDF *back* and verify it the way an ATS would.
 // Pure JS throughout — no LaTeX, no native modules.
 
-import fs from 'node:fs';
-import path from 'node:path';
 import PDFDocument from 'pdfkit';
 import { AlignmentType, BorderStyle, Document, HeadingLevel, Packer, Paragraph, Tab, TabStopType, TextRun } from 'docx';
 import type { Application, Artifact, ArtifactKind, AtsReport } from '@shared/types';
@@ -12,7 +10,6 @@ import { findGaps } from '@shared/placeholders';
 import { DEFAULT_DOC_FORMAT, type DocFormat } from '@shared/types';
 import { getDocFormat } from './config';
 import { findFontFiles } from './fonts';
-import { FILES_DIR } from './paths';
 import { BRIDGE, FILLER, SPELLING, WEAK_OPENER, buildAudit, matchKeywords } from './audit';
 
 export interface Run {
@@ -35,10 +32,42 @@ export const STOP = new Set(
   ).split(/\s+/),
 );
 
+// ─── Honesty: what a draft claims vs what the person confirmed ──────────────
+
+/** The numbers a text states, as whole tokens: "30–40%" → 30, 40%; "2015" is 2015, never a "5". */
+const numbersIn = (s: string) => (s.match(/\d+(?:[.,]\d+)?%?/g) ?? []).map((n) => n.replace(/,(?=\d{3}\b)/g, ''));
+
+// Words that say nothing about WHICH job or school it was. Level words (senior, staff, principal, lead) are claims.
+const ENTRY_GENERIC = new Set(
+  'engineer engineering developer development software manager management specialist consultant analyst team member intern and the of for at with in gmbh inc ltd llc ag se corp co limited plc remote hybrid'.split(' '),
+);
+const entryWords = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .split(/[^a-z0-9+#]+/)
+    .filter((w) => w.length > 1 && !ENTRY_GENERIC.has(w));
+
+/** Role and education lines ("### Title | Company | Dates | City") whose employer, school or title has words
+ *  the person never confirmed. A draft never invents one; an edit can, and it's easy to miss. Dates are
+ *  checked as numbers (every year must be in the profile). */
+export function unbackedEntries(md: string, truth: string): string[] {
+  const have = new Set(entryWords(truth));
+  if (!have.size) return [];
+  const out: string[] = [];
+  for (const line of md.split('\n')) {
+    const m = /^###\s+(.+)$/.exec(line.trim());
+    if (!m) continue;
+    const { title, rest } = splitEntry(m[1]);
+    const missing = [...new Set([...entryWords(rest.split(/\s+\|\s+/)[0] ?? ''), ...entryWords(title)])].filter((w) => !have.has(w));
+    if (missing.length) out.push(`"${m[1].trim()}" — not in your profile: ${missing.join(', ')}`);
+  }
+  return out;
+}
+
 /** Gaps the human still has to fill — placeholders quoted in editorial notes don't count. */
 export const findPlaceholders = (md: string): string[] => findGaps(md).map((g) => g.token);
-
-const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
 
 // ─── Markdown → blocks ──────────────────────────────────────────────────────
 
@@ -437,27 +466,14 @@ export async function renderDocx(blocks: Block[], opts: { title: string; kind?: 
   return Buffer.from(await Packer.toBuffer(doc));
 }
 
-// ─── Export to disk ─────────────────────────────────────────────────────────
+// ─── Render for export ──────────────────────────────────────────────────────
 
-export async function exportArtifact(
-  art: Artifact,
-  app: Application | null,
-  format: 'pdf' | 'docx',
-): Promise<{ buffer: Buffer; filename: string; filePath: string }> {
+/** The document as the file you send. Writing it to disk is folders.ts's job (one folder per job). */
+export async function renderArtifact(art: Artifact, format: 'pdf' | 'docx'): Promise<Buffer> {
   const blocks = parseResumeMarkdown(art.content);
-  const filename = `${exportBaseName(art, app)}.${format}`;
   const opts = { title: art.title, kind: art.kind, style: getDocFormat() };
-  const buffer = format === 'pdf' ? await renderPdf(blocks, opts) : await renderDocx(blocks, opts);
-  const dir = path.join(FILES_DIR, 'exports', app?.id ?? 'misc');
-  fs.mkdirSync(dir, { recursive: true });
-  const filePath = path.join(dir, filename);
-  fs.writeFileSync(filePath, buffer);
-  return { buffer, filename, filePath };
+  return format === 'pdf' ? renderPdf(blocks, opts) : renderDocx(blocks, opts);
 }
-
-/** "senior-platform-engineer-northwind-cloud-resume" — shared by exports and the audit file. */
-export const exportBaseName = (art: Artifact, app: Application | null) =>
-  slug([app?.role, app?.company, art.kind.replace('_', '-')].filter(Boolean).join('-')) || art.kind;
 
 // ─── ATS verification: read the PDF back the way a parser would ─────────────
 
@@ -529,19 +545,21 @@ export async function analyzeAts(input: {
     (sig(m).some((w) => tl.includes(w)) ? addressed : unaddressed).push(m);
   }
 
-  // Honesty check: numbers in the resume that the profile never mentions.
+  // Honesty check: numbers the profile never states — whole numbers, years included ("5" is not in "2015").
   const prof = input.profile.toLowerCase();
+  const profNums = new Set(numbersIn(prof).flatMap((n) => [n, n.replace('%', '')]));
   const unverifiedClaims: string[] = [];
   if (prof.trim()) {
     for (const b of blocks) {
       if (b.type === 'h1' || b.type === 'h2') continue;
       if (/@|\+?\d{2,3}[\s-]\d{3}/.test(b.text)) continue; // contact lines
       if (DATE_LINE.test(b.text)) continue; // a letter's own date ("Berlin, 29 October 2026")
-      const nums = (b.text.match(/\d+(?:[.,]\d+)?%?/g) ?? []).filter((n) => !/^(19|20)\d{2}$/.test(n));
-      const bad = nums.filter((n) => !prof.includes(n.toLowerCase()));
+      const bad = numbersIn(b.text).filter((n) => !profNums.has(n) && !profNums.has(n.replace('%', '')));
       if (bad.length) unverifiedClaims.push(`"${b.text.slice(0, 110)}" — ${[...new Set(bad)].join(', ')} not found in your profile`);
     }
   }
+  // …and employers, schools or titles it never names.
+  const unbacked = isLetter || !prof.trim() ? [] : unbackedEntries(input.source, input.profile);
 
   // Issues are the things to fix first; the score itself comes from the weighted audit below.
   const issues: AtsReport['issues'] = [];
@@ -587,8 +605,14 @@ export async function analyzeAts(input: {
   if (unaddressed.length) {
     issues.push({ level: 'warn', text: `Must-haves not evidenced: ${unaddressed.slice(0, 3).map((s) => s.replace(/\.$/, '')).join('; ')}` });
   }
+  if (unbacked.length) {
+    issues.push({ level: 'block', text: `${unbacked.length} role or education line(s) name an employer, school or title that isn't in your profile: ${unbacked[0]}${unbacked.length > 1 ? ' …' : ''}` });
+  }
   if (unverifiedClaims.length) {
-    issues.push({ level: 'warn', text: `${unverifiedClaims.length} number(s) in the resume don't appear in your profile — verify they're true before sending.` });
+    issues.push({
+      level: 'warn',
+      text: `${unverifiedClaims.length} number(s) in the ${isLetter ? 'letter' : 'resume'} don't appear in your profile — verify they're true before sending.`,
+    });
   }
 
   // Letters: sentences that reuse wording from the person's other letters (the closing may; the argument may not).
@@ -612,6 +636,7 @@ export async function analyzeAts(input: {
     keywords: kws.length ? match : null,
     mustHaves: an ? { addressed: addressed.length, total: addressed.length + unaddressed.length, unaddressed } : null,
     unverifiedClaims: unverifiedClaims.length,
+    unbackedEntries: unbacked.length,
     hasProfile: !!prof.trim(),
     app: input.application,
     recycled,
@@ -631,6 +656,7 @@ export async function analyzeAts(input: {
     keywords: { found, missing, coverage, skillsOnly: match.skillsOnly },
     mustHaves: { addressed, unaddressed },
     unverifiedClaims,
+    unbackedEntries: unbacked,
     issues,
     suggestions: isLetter
       ? letterSuggestions(blocks, plain, input.application, unaddressed, input.siblings ?? [])
@@ -781,6 +807,7 @@ export function summarizeAts(r: AtsReport): string {
     ...r.categories.flatMap((c) => c.findings.map((f) => `[${c.label.toLowerCase()}] ${f}`)),
     r.mustHaves.unaddressed.length ? `Must-haves not evidenced: ${r.mustHaves.unaddressed.join(' | ')}` : 'All extracted must-haves are evidenced.',
     r.placeholders.length ? `BLOCKING: ${r.placeholders.length} placeholder(s) remain: ${r.placeholders.join(', ')}` : '',
+    r.unbackedEntries.length ? `Not in the profile (export refuses these — never invent an employer, school or title):\n- ${r.unbackedEntries.join('\n- ')}` : '',
     r.unverifiedClaims.length ? `Verify these numbers (not in profile):\n- ${r.unverifiedClaims.join('\n- ')}` : '',
     ...r.issues.map((i) => `[${i.level}] ${i.text}`),
     ...r.suggestions.map((s) => `[suggestion] ${s}`),
