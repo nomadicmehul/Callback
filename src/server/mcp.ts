@@ -598,6 +598,8 @@ export function jobsearchTools(ctx: RunContext) {
 export const SUPPORTED_INTERVIEW_MODES = INTERVIEW_MODES;
 
 /** In-process server for the app's live (API-key) mode. Built fresh per run. */
-export function buildJobsearchServer(ctx: RunContext) {
-  return createSdkMcpServer({ name: 'jobsearch', version: '0.1.0', tools: jobsearchTools(ctx) });
+/** The in-process server for one live run. `only` names the tools that run needs; the rest never reach the model. */
+export function buildJobsearchServer(ctx: RunContext, only?: string[]) {
+  const tools = (jobsearchTools(ctx) as any[]).filter((t) => !only || only.includes(t.name));
+  return createSdkMcpServer({ name: 'jobsearch', version: '0.1.0', tools });
 }
