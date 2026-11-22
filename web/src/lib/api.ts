@@ -23,6 +23,8 @@ import type {
   Drill,
   Experience,
   ExperienceInput,
+  FolderInfo,
+  FolderSync,
   GapSuggestion,
   ImportResult,
   InterviewMode,
@@ -78,9 +80,18 @@ export const api = {
   stats: () => fetch('/api/stats').then(j<DashboardStats>),
 
   getConfig: () =>
-    fetch('/api/config').then(j<{ hasApiKey: boolean; candidateProfile: string; profileSource: ProfileSource | null; docFormat: DocFormat }>),
-  saveConfig: (body: { apiKey?: string; candidateProfile?: string; docFormat?: Partial<DocFormat> }) =>
-    post('/api/config', body).then(j<{ ok: boolean; hasApiKey: boolean; hasProfile: boolean; docFormat: DocFormat }>),
+    fetch('/api/config').then(
+      j<{
+        hasApiKey: boolean;
+        candidateProfile: string;
+        profileSource: ProfileSource | null;
+        docFormat: DocFormat;
+        applicationsDir: string;
+        applicationsDirDefault: string;
+      }>,
+    ),
+  saveConfig: (body: { apiKey?: string; candidateProfile?: string; docFormat?: Partial<DocFormat>; applicationsDir?: string }) =>
+    post('/api/config', body).then(j<{ ok: boolean; hasApiKey: boolean; hasProfile: boolean; docFormat: DocFormat; applicationsDir: string }>),
 
   getProfile: () => fetch('/api/profile').then(j<{ text: string; source: ProfileSource | null; hasProfile: boolean }>),
   uploadProfile: (file: File) => {
@@ -122,6 +133,9 @@ export const api = {
   updateApplication: (id: string, body: { company?: string; role?: string; location?: string | null }) =>
     patch(`/api/applications/${id}`, body).then(j<{ application: Application }>),
   tailor: (id: string) => post(`/api/applications/${id}/tailor`).then(j<{ runId: string }>),
+  folder: (id: string) => fetch(`/api/applications/${id}/folder`).then(j<FolderInfo>),
+  saveFolder: (id: string) => post(`/api/applications/${id}/folder`).then(j<FolderSync>),
+  openFolder: (id: string) => post(`/api/applications/${id}/folder/open`).then(j<{ ok: boolean; path: string }>),
   recordOutcome: (id: string, stage: OutcomeStage, detail: string) =>
     post(`/api/applications/${id}/outcome`, { stage, detail }).then(j<{ outcome: Outcome; runId: string }>),
 

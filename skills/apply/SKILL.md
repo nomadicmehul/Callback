@@ -18,7 +18,8 @@ One honest pass over a single role. The human stays in control at every write.
 6. **Tailor** — follow the `resume-tailor` skill, grounded ONLY in the profile from step 1. Map must-haves to real evidence; leave `[fill in: …]` placeholders where a true detail is missing. **Show the draft to the user and get an explicit yes before saving.** Then call `save_draft` with kind `resume`. Afterwards call `artifact_ats_check` on it and fix only what is genuinely true.
 7. **Cover letter — one per job.** Draft it with the `cover-letter` skill (specific to *this* company and role; never a reused letter with the name swapped) → confirm with the user → `save_draft` kind `cover_letter`. If the user doesn't want one, skip it; the resume stays saved.
 8. **Learn.** If something durable came up (a framing that fits this person, a gap to work on), call `memory_propose` with low confidence.
-9. Close with: what was saved for this job (resume, cover letter), the honest gaps, and the reminder that *they* submit the application themselves — Callback never auto-submits. `applications_list` shows what every tracked job has.
+9. **File it.** Once every gap is filled, `application_folder` writes this job's folder (`<Company>/<Role>/`): the PDF to send under a plain name (`Jane_Doe_CV.pdf`), a Word copy named for the job, the audits, the posting as captured and the prep pack. Give the user the path.
+10. Close with: what was saved for this job (resume, cover letter), the honest gaps, where its folder is, and the reminder that *they* submit the application themselves — Callback never auto-submits. `applications_list` shows what every tracked job has.
 
 ## Never
 - Never fabricate experience, titles, dates, metrics, or skills.
