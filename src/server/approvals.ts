@@ -1,4 +1,4 @@
-import { createApproval, getApplication, resolveApprovalRow, saveArtifact, setDraftStatus, settleDrafting, updateArtifact } from './db';
+import { createApproval, getApplication, getApproval, resolveApprovalRow, saveArtifact, setDraftStatus, settleDrafting, updateArtifact } from './db';
 import { emitRunEvent } from './bus';
 import type { Approval, ApprovalDecision } from '@shared/types';
 
@@ -27,6 +27,9 @@ export function requestApproval(input: {
 }
 
 export function resolveApproval(id: string, decision: ApprovalDecision): Approval | null {
+  // Only a pending approval can be decided: a second click or a second tab must not save the draft twice.
+  const current = getApproval(id);
+  if (!current || current.status !== 'pending') return current;
   const approval = resolveApprovalRow(id, decision === 'allow' ? 'allowed' : 'denied');
   if (!approval) return null;
   emitRunEvent({

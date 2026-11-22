@@ -272,7 +272,9 @@ export function apiRouter(): Hono {
     updateApplicationStatus(app.id, status);
     // Moving a job to applied, screen, interview… is an outcome: it belongs on the timeline and in the stats.
     if ((OUTCOME_STAGES as string[]).includes(status)) recordOutcome({ applicationId: app.id, stage: status as OutcomeStage, detail: '' });
-    refreshFolder(app.id);
+    // "Applied" files the application, however it's logged (here or through an outcome).
+    if (status === 'applied') await syncFolder(app.id).catch((err) => console.error('[folders]', err?.message ?? err));
+    else refreshFolder(app.id);
     return c.json({ ok: true });
   });
 
