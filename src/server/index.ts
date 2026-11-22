@@ -24,7 +24,6 @@ try {
 
 ensureDataDir();
 initDb();
-closeInterruptedRuns(); // runs that were mid-flight died with the last server; their approvals still work
 watchFolders(); // keep each job's folder current as drafts and outcomes land
 refreshStaleAnalyses(); // jobs an older offline reader analyzed get today's reading
 
@@ -71,6 +70,9 @@ if (fs.existsSync(webDir)) {
 
 const port = Number(process.env.CALLBACK_PORT ?? 4317);
 serve({ fetch: app.fetch, hostname: '127.0.0.1', port }, (info) => {
+  // Only once this server owns the port: a second copy that fails to bind must not close the first one's live
+  // runs. Runs that were mid-flight died with the last server; their approvals still work (approvals.ts).
+  closeInterruptedRuns();
   const url = `http://127.0.0.1:${info.port}`;
   const mode = hasApiKey() ? 'live (Claude)' : 'demo (no API key yet — add one in the dashboard for live agents)';
   console.log('');
