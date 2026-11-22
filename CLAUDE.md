@@ -45,6 +45,8 @@ src/shared/types.ts     the one source of truth for types (web + server + TUI); 
                         stories.ts = story types + recruiter prompts (dashboard form and /callback:story)
 src/server/
   index.ts    Hono app, SSE /events, serves dist/web, port CALLBACK_PORT (4317)
+  localonly.ts localOnly() on /api/* and /events: loopback Host (DNS rebinding) and no foreign Origin or
+              Sec-Fetch-Site: cross-site (CSRF from any website); no Origin = a local program (TUI, curl)
   routes.ts   REST API under /api (applications, artifacts, interviews, drills, memory, approvals…)
   engine.ts   runs: tailor (analysis → resume → cover letter), retro, mock interview, prep pack; demo + live drivers
   mcp.ts      jobsearchTools(ctx): the tool set shared by the in-process SDK server AND the stdio plugin server
