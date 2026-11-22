@@ -429,8 +429,10 @@ ${clean}`;
       cwd: WORKSPACE_DIR,
       env: { ...process.env, ANTHROPIC_API_KEY: apiKey },
       maxTurns: 1,
+      tools: [], // text in, JSON out: no shell, no files, no web
       allowedTools: [],
       permissionMode: 'default',
+      canUseTool: async () => ({ behavior: 'deny', message: 'No tools in this step.' }),
     };
     for await (const msg of query({ prompt, options }) as any) {
       if (msg?.type === 'result' && typeof msg.result === 'string') out = msg.result;
