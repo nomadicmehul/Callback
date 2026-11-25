@@ -63,7 +63,7 @@ export function eventText(e: RunEvent): string {
     case 'memory_proposed':
       return `Proposed lesson — ${e.note.content}`;
     case 'cost':
-      return `Run cost ≈ $${e.costUsd.toFixed(2)}`;
+      return e.costUsd > 0 ? `Run cost ≈ $${e.costUsd.toFixed(2)}` : 'Offline run — no API cost';
     case 'done':
       return `Done — ${e.summary}`;
     case 'error':
