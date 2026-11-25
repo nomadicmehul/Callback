@@ -10,6 +10,7 @@ import {
   proposeMemory,
   setApplicationAnalysis,
   updateApplicationStatus,
+  setDraftStatus,
   saveArtifact,
   listArtifacts,
   getApplication,
@@ -376,7 +377,7 @@ export function jobsearchTools(ctx: RunContext) {
           title: args.title,
           content: args.content,
         });
-        if (args.kind === 'resume' || args.kind === 'cover_letter') updateApplicationStatus(args.applicationId, 'ready');
+        if (args.kind === 'resume' || args.kind === 'cover_letter') setDraftStatus(args.applicationId, 'ready');
         ctx.emit({ type: 'artifact', artifact });
         return ok(`Saved ${args.kind}. The user can review and edit it in the dashboard.`);
       },

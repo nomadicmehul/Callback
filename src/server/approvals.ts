@@ -1,4 +1,4 @@
-import { createApproval, resolveApprovalRow } from './db';
+import { createApproval, getApplication, getApproval, resolveApprovalRow, saveArtifact, setDraftStatus, settleDrafting, updateArtifact } from './db';
 import { emitRunEvent } from './bus';
 import type { Approval, ApprovalDecision } from '@shared/types';
 
@@ -27,6 +27,9 @@ export function requestApproval(input: {
 }
 
 export function resolveApproval(id: string, decision: ApprovalDecision): Approval | null {
+  // Only a pending approval can be decided: a second click or a second tab must not save the draft twice.
+  const current = getApproval(id);
+  if (!current || current.status !== 'pending') return current;
   const approval = resolveApprovalRow(id, decision === 'allow' ? 'allowed' : 'denied');
   if (!approval) return null;
   emitRunEvent({
@@ -40,6 +43,25 @@ export function resolveApproval(id: string, decision: ApprovalDecision): Approva
   if (resolver) {
     pending.delete(id);
     resolver(decision);
+  } else if (decision === 'allow') {
+    applyOrphan(approval); // the run that asked died with a restart; the draft is still here
   }
   return approval;
+}
+
+/** Approving a draft whose run is gone (the server restarted while it waited) keeps the draft: the approval
+ *  row holds exactly what the agent proposed, so save that, the same way the tool would have. */
+function applyOrphan(approval: Approval): void {
+  const input = approval.input as Record<string, any>;
+  const appId = approval.applicationId ?? (typeof input.applicationId === 'string' ? input.applicationId : null);
+  let artifact = null;
+  if (/save_draft$/.test(approval.tool) && appId && getApplication(appId) && typeof input.content === 'string') {
+    const kind = ['resume', 'cover_letter', 'interview_prep'].includes(input.kind) ? input.kind : 'resume';
+    artifact = saveArtifact({ applicationId: appId, kind, title: String(input.title ?? kind), content: input.content });
+    if (kind !== 'interview_prep') setDraftStatus(appId, 'ready');
+  } else if (/artifact_update$/.test(approval.tool) && typeof input.artifactId === 'string' && typeof input.content === 'string') {
+    artifact = updateArtifact(input.artifactId, input.content);
+  }
+  if (appId) settleDrafting(appId);
+  if (artifact) emitRunEvent({ type: 'artifact', runId: approval.runId, ts: new Date().toISOString(), artifact });
 }
