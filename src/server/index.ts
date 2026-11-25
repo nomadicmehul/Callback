@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { ensureDataDir } from './paths';
 import { closeInterruptedRuns, initDb, listPendingApprovals } from './db';
+import { refreshStaleAnalyses } from './engine';
 import { apiRouter } from './routes';
 import { subscribe } from './bus';
 import { watchFolders } from './folders';
@@ -24,6 +25,7 @@ try {
 ensureDataDir();
 initDb();
 watchFolders(); // keep each job's folder current as drafts and outcomes land
+refreshStaleAnalyses(); // jobs an older offline reader analyzed get today's reading
 
 const app = new Hono();
 // Every API call and the event stream: loopback Host, and no other website's pages.

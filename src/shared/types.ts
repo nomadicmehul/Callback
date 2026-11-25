@@ -42,6 +42,10 @@ export interface JdAnalysis {
   /** 0–100 fit estimate, honest — gaps stay visible, never keyword-stuffed. */
   fitScore: number | null;
   fitRationale: string | null;
+  /** Who read the posting: the offline reader (with its version, so a better reader can redo it) or Claude.
+   *  Absent on analyses saved before this was recorded. */
+  source?: 'offline' | 'claude';
+  reader?: number;
 }
 
 export interface Application {

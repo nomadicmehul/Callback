@@ -327,6 +327,11 @@ export function updateApplicationStatus(id: string, status: ApplicationStatus): 
   db.prepare('UPDATE applications SET status = ?, updated_at = ? WHERE id = ?').run(status, now(), id);
 }
 
+/** Swap in a re-read analysis without touching the job's company, role or updated_at (a re-read isn't news). */
+export function replaceApplicationAnalysis(id: string, analysis: JdAnalysis): void {
+  db.prepare('UPDATE applications SET analysis_json = ?, fit_score = ? WHERE id = ?').run(JSON.stringify(analysis), analysis.fitScore ?? null, id);
+}
+
 /** A tailor run may move a job between saved, drafting and ready, but only before it's submitted: once the
  *  person applied, the stage (applied, interview, offer…) is theirs and a re-tailor leaves it alone. */
 export function setDraftStatus(id: string, status: 'saved' | 'drafting' | 'ready'): void {

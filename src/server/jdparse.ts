@@ -134,6 +134,11 @@ export function skillsIn(text: string): string[] {
   return hits.sort((a, b) => b[1] - a[1]).map(([n]) => n);
 }
 
+/** Bump when the reader extracts something different: offline analyses made by an older version are
+ *  re-read on start (engine.ts refreshStaleAnalyses), so old jobs don't keep scoring against stale terms.
+ *  1 = the line-scoring reader before section parsing (unstamped analyses). */
+export const JD_READER = 2;
+
 export function parseJd(text: string, company = ''): JdParts {
   const raw = text.split(/\r?\n/).flatMap((l) => (/•/.test(l) && !BULLET.test(l) ? l.split(/\s*•\s*/) : [l]));
   const buckets: Record<Section, string[]> = { requirements: [], responsibilities: [], nice: [], stack: [], skip: [], intro: [] };

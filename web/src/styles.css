@@ -1609,3 +1609,55 @@ hr.sep {
 .backup-list li {
   margin-bottom: 3px;
 }
+
+/* The audit at a glance, at the top of a job's drawer */
+.job-match {
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  font-size: 12.5px;
+}
+.job-match-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.job-match-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 12px;
+}
+@media (max-width: 560px) {
+  .job-match-cols {
+    grid-template-columns: 1fr;
+  }
+}
+.job-match ul,
+.job-match ol {
+  margin: 0 0 8px;
+  padding-left: 18px;
+  color: var(--text-dim);
+}
+.job-match li {
+  margin-bottom: 3px;
+}
+.job-match-label {
+  font-size: 11.5px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+}
+.job-match-label.good {
+  color: var(--brand);
+}
+.job-match-label.bad {
+  color: var(--warn);
+}
+.job-match-next {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}

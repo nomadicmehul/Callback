@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Artifact, AtsReport } from '@shared/types';
 import { fillGaps, findGaps, type GapFill } from '@shared/placeholders';
 import { api } from '../lib/api';
@@ -14,11 +14,14 @@ export function ArtifactCard({
   open,
   onToggle,
   onChanged,
+  earlier = false,
 }: {
   artifact: Artifact;
   open: boolean;
   onToggle: () => void;
   onChanged: () => void;
+  /** An older version, kept for reference: a newer draft of this kind exists. */
+  earlier?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [filling, setFilling] = useState(false);
@@ -119,15 +122,23 @@ export function ArtifactCard({
     }
   }
 
+  // Opening a CV or letter shows its audit right away; nobody should have to find a button for it.
+  useEffect(() => {
+    if (open && CHECKABLE.has(artifact.kind) && !report && !busy) check();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, artifact.content]);
+
   const revisions = Number(artifact.meta?.revisions ?? 0);
   const gaps = EXPORTABLE.has(artifact.kind) ? findGaps(artifact.content) : [];
 
   return (
-    <div className="panel" style={{ marginBottom: 8, overflow: 'hidden' }}>
+    <div id={`art-${artifact.id}`} className="panel" style={{ marginBottom: 8, overflow: 'hidden' }}>
       <div style={{ padding: '9px 12px', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }} onClick={onToggle}>
         <span className="status-chip" style={{ ['--chip' as any]: 'var(--accent)' }}>{artifact.kind.replace('_', ' ')}</span>
         <span style={{ fontSize: 13 }}>{artifact.title}</span>
         {revisions > 0 && <span className="scrim-note">· edited ×{revisions}</span>}
+        {earlier && <span className="scrim-note">· earlier version, {new Date(artifact.createdAt).toLocaleDateString()}</span>}
+        {report && <span className="scrim-note" style={{ marginLeft: 4 }}>· {report.score}/100</span>}
         <span style={{ marginLeft: 'auto', color: 'var(--text-faint)' }}>{open ? '▾' : '▸'}</span>
       </div>
 
