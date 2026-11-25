@@ -26,10 +26,10 @@ import {
 } from './db';
 import { scheduleDrill, completeSession, recordDrillResult, INTERVIEW_MODES, DIMENSIONS } from './interview';
 import { addExperience, getArtifact, listExperiences, updateArtifact } from './db';
-import { bankText, groundTruth, importFromCv, importGitHub, importLink } from './experience';
+import { bankText, claimsTruth, groundTruth, importFromCv, importGitHub, importLink } from './experience';
 import { standingAnswers } from './gapsuggest';
 import { coverageText, experienceCoverage } from './coverage';
-import { summarizeAts, findPlaceholders } from './resume';
+import { summarizeAts, findPlaceholders, unbackedEntries } from './resume';
 import { auditMarkdown } from './audit';
 import { auditOf, exportToFolder, folderInfo, refreshFolder, saveAudit, syncFolder } from './folders';
 import { recommendationsText, studyText, type DimResult } from './resources';
@@ -452,6 +452,8 @@ export function jobsearchTools(ctx: RunContext) {
         if (!art) return ok(`No artifact ${args.artifactId}.`);
         const ph = findPlaceholders(art.content);
         if (ph.length) return ok(`Not exported — ${ph.length} placeholder(s) remain: ${ph.join(', ')}. Fill them with real details (artifact_update) first.`);
+        const unbacked = art.kind === 'resume' ? unbackedEntries(art.content, claimsTruth()) : [];
+        if (unbacked.length) return ok(`Not exported — ${unbacked.join('; ')}. Never invent an employer, school or title; if it is real, the user adds it to their profile or experience bank first.`);
         const { filePath } = await exportToFolder(art, args.format);
         return ok(`Exported to ${filePath}`);
       },

@@ -139,6 +139,18 @@ export function AtsReportView({ report }: { report: AtsReport }) {
         </div>
       )}
 
+      {r.unbackedEntries?.length > 0 && (
+        <div className="guard-note" style={{ marginTop: 10 }}>
+          <b>Not in your profile.</b> These name an employer, school or title you haven’t confirmed, so Callback won’t export them. If one is
+          real, add it to your profile or experience bank:
+          <ul>
+            {r.unbackedEntries.map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {r.unverifiedClaims.length > 0 && (
         <div className="guard-note" style={{ marginTop: 10 }}>
           <b>Verify these numbers.</b> They don’t appear in your profile — make sure each one is true before you send this:

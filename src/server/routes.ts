@@ -28,7 +28,7 @@ import { guardField, postingGuard } from './guard';
 import { fetchPosting } from './posting';
 import { extractProfileText, saveProfileFile } from './profile';
 import { answerDrill, INTERVIEW_MODES } from './interview';
-import { parseResumeMarkdown, renderPdf, findPlaceholders } from './resume';
+import { parseResumeMarkdown, renderPdf, findPlaceholders, unbackedEntries } from './resume';
 import { auditMarkdown } from './audit';
 import { applicationsRoot, auditOf, cleanRoot, DEFAULT_APPLICATIONS_DIR, exportToFolder, folderInfo, openFolder, refreshFolder, saveAudit, syncFolder } from './folders';
 import { backupFilename, exportBackup, importBackup, listBackups, resetData } from './backup';
@@ -62,7 +62,7 @@ import {
   updateExperience,
   addGapAnswers,
 } from './db';
-import { importFromCv, importGitHub, importLink, importLinkedIn, structureStory, structureStoryLive } from './experience';
+import { claimsTruth, importFromCv, importGitHub, importLink, importLinkedIn, structureStory, structureStoryLive } from './experience';
 import { experienceCoverage } from './coverage';
 import { learnFormat } from './cvformat';
 import { suggestGaps } from './gapsuggest';
@@ -477,6 +477,10 @@ export function apiRouter(): Hono {
         { error: `Fill in the ${placeholders.length} placeholder(s) first — Callback won't export a scaffold: ${placeholders.slice(0, 3).join(', ')}` },
         422,
       );
+    }
+    const unbacked = art.kind === 'resume' ? unbackedEntries(art.content, claimsTruth()) : [];
+    if (unbacked.length && !preview) {
+      return c.json({ error: `Not exported — ${unbacked[0]}. If it's real, add it to your profile or experience bank first.` }, 422);
     }
     if (preview) {
       const pdf = await renderPdf(parseResumeMarkdown(art.content), { title: art.title, kind: art.kind, style: getDocFormat() });

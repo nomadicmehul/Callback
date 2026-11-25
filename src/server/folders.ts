@@ -14,9 +14,9 @@ import type { Application, Artifact, ArtifactKind, FolderInfo, FolderSync } from
 import { getConfig, getDocFormat } from './config';
 import { DATA_DIR } from './paths';
 import { getApplication, listArtifacts, listArtifactsOfKind, listInterviewSessionsByApplication, listOutcomes, setApplicationFolder } from './db';
-import { analyzeAts, findPlaceholders, parseResumeMarkdown, renderArtifact, renderPdf } from './resume';
+import { analyzeAts, findPlaceholders, parseResumeMarkdown, renderArtifact, renderPdf, unbackedEntries } from './resume';
 import { auditMarkdown } from './audit';
-import { groundTruth } from './experience';
+import { claimsTruth } from './experience';
 import { standingAnswers } from './gapsuggest';
 import { guessName } from './cvtext';
 import { subscribe } from './bus';
@@ -175,7 +175,7 @@ export async function auditOf(art: Artifact) {
     pdf,
     source: art.content,
     application: app,
-    profile: groundTruth(),
+    profile: claimsTruth(),
     kind: art.kind,
     siblings: listArtifactsOfKind(art.kind, art.id).map((a) => a.content),
   });
@@ -292,6 +292,11 @@ export async function syncFolder(appId: string): Promise<FolderSync> {
     const gaps = findPlaceholders(art.content);
     if (gaps.length) {
       skipped.push({ file: documentFileName(art, app, 'pdf'), reason: `${gaps.length} gap${gaps.length === 1 ? '' : 's'} to fill first` });
+      continue;
+    }
+    const unbacked = kind === 'resume' ? unbackedEntries(art.content, claimsTruth()) : [];
+    if (unbacked.length) {
+      skipped.push({ file: documentFileName(art, app, 'pdf'), reason: `names an employer, school or title your profile doesn't (${unbacked[0]})` });
       continue;
     }
     for (const format of ['pdf', 'docx'] as const) {

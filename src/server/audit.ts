@@ -179,6 +179,8 @@ export interface AuditInput {
   keywords: KeywordMatch | null;
   mustHaves: { addressed: number; total: number; unaddressed: string[] } | null;
   unverifiedClaims: number;
+  /** Role/education lines naming an employer, school or title the profile doesn't. */
+  unbackedEntries?: number;
   hasProfile: boolean;
   app: Application | null;
   /** Letters: sentences that reuse wording from the person's other letters. */
@@ -381,12 +383,18 @@ function honestyCategory(i: AuditInput): Cat {
     c.findings.push(`${i.placeholders} unfilled placeholder(s) — fill each with a real detail, or drop it. The overall score is capped at 40 until you do.`);
     return c;
   }
+  if (i.unbackedEntries) {
+    c.score = 0;
+    c.findings.push(
+      `${i.unbackedEntries} role or education line(s) name an employer, school or title your profile doesn't — Callback won't export this. If it's real, add it to your profile or experience bank.`,
+    );
+  }
   if (i.unverifiedClaims) down(c, Math.min(100, 25 * i.unverifiedClaims), `${i.unverifiedClaims} number(s) don't appear in your profile — verify each before sending.`);
   if (!i.hasProfile) {
     c.score = Math.min(c.score, 60);
     c.findings.push("No profile on file — numbers can't be verified. Add your resume in Settings.");
   }
-  if (i.hasProfile && !i.unverifiedClaims) up(c, 'Every number traces back to your profile');
+  if (i.hasProfile && !i.unverifiedClaims && !i.unbackedEntries) up(c, 'Every number, employer and title traces back to your profile');
   return c;
 }
 
@@ -394,6 +402,7 @@ const PRIORITY: Cat['key'][] = ['honesty', 'impact', 'specificity', 'match', 'pa
 
 function verdictFor(score: number, i: AuditInput): string {
   if (i.placeholders) return 'Not ready — fill the placeholders first; the score is capped until you do.';
+  if (i.unbackedEntries) return "Not ready — it names an employer, school or title that isn't in your profile.";
   if (!i.parseable) return 'Not ready — the PDF text layer is unreadable.';
   if (score >= 85) return 'Ready to send — strong on the signals parsers and recruiters check.';
   if (score >= 70) return 'Solid — fix the findings below and it stands out.';
@@ -413,7 +422,7 @@ export function buildAudit(i: AuditInput): AuditResult {
   for (const c of categories) c.weight = Math.round((c.weight / total) * 100) / 100;
   const sum = categories.reduce((s, c) => s + c.weight, 0);
   let score = Math.round(categories.reduce((s, c) => s + c.score * c.weight, 0) / sum);
-  if (i.placeholders) score = Math.min(score, 40);
+  if (i.placeholders || i.unbackedEntries) score = Math.min(score, 40);
   if (!i.parseable) score = Math.min(score, 30);
   else if (i.cid) score = Math.min(score, 60);
   score = Math.max(0, Math.min(100, score));
@@ -462,12 +471,13 @@ export function auditMarkdown(r: AtsReport, art: Artifact, app: Application | nu
   if (r.mustHaves.addressed.length || r.mustHaves.unaddressed.length) {
     lines.push('', '## Must-haves', ...r.mustHaves.addressed.map((m) => `- ✓ ${m}`), ...r.mustHaves.unaddressed.map((m) => `- ✗ ${m}`));
   }
+  if (r.unbackedEntries?.length) lines.push('', '## Not in your profile', "Callback won't export these until your profile or experience bank backs them:", ...r.unbackedEntries.map((c) => `- ${c}`));
   if (r.unverifiedClaims.length) lines.push('', '## Numbers to verify', "These don't appear in your profile — make sure each is true before you send:", ...r.unverifiedClaims.map((c) => `- ${c}`));
   if (r.suggestions.length) lines.push('', '## Make it stronger', ...r.suggestions.map((s) => `- ${s}`));
   lines.push(
     '',
     '## How this score works',
-    'Each category is scored 0–100 and weighted as shown; the total is their weighted average. Two gates sit on top: unfilled placeholders cap the total at 40 and an unreadable text layer at 30, because nothing else matters until those are fixed.',
+    'Each category is scored 0–100 and weighted as shown; the total is their weighted average. Gates sit on top: unfilled placeholders or an employer, school or title your profile doesn\'t name cap the total at 40, and an unreadable text layer at 30, because nothing else matters until those are fixed.',
     'Keywords are matched after normalisation (k8s = Kubernetes, plural = singular) and weighted by where they sit. Nothing here rewards adding words that are not true — every number is checked against your own profile.',
     'Grounded in how screening works: parsers and keyword filters first (Jobscan 2026: 99.7% of recruiters filter on keywords), then a ~7-second top-down skim that fixates on quantified bullets (TheLadders eye-tracking), then Impact / Brevity / Style the way the better resume checkers score them — plus Honesty, which the others leave out.',
     '',
